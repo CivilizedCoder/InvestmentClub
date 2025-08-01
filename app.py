@@ -4,6 +4,10 @@ from flask_sqlalchemy import SQLAlchemy
 import yfinance as yf
 import os
 
+# Initialize the SQLAlchemy database extension WITHOUT an app instance.
+# This is a more robust pattern.
+db = SQLAlchemy()
+
 # Initialize the Flask application
 app = Flask(__name__,
             static_folder='static',
@@ -13,16 +17,20 @@ app = Flask(__name__,
 # Render provides the database URL via an environment variable.
 database_url = os.environ.get('DATABASE_URL')
 
-# FIX: Replace 'postgres://' with 'postgresql://' for SQLAlchemy compatibility
+# FIX 1: Replace 'postgres://' with 'postgresql://' for SQLAlchemy compatibility
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+# FIX 2: Append sslmode=require to fix SSL connection errors on Render
+if database_url and "sslmode" not in database_url:
+    database_url += "?sslmode=require"
 
 # We are telling SQLAlchemy where to find our database.
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Initialize the SQLAlchemy database extension
-db = SQLAlchemy(app)
+# Now, associate the database with the app instance.
+db.init_app(app)
 
 # --- DATABASE MODEL ---
 # This class defines the structure of our 'holdings' table in the database.
