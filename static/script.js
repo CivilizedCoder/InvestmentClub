@@ -9,21 +9,19 @@ function fetchData() {
         return;
     }
 
-    // **IMPORTANT**: Replace this with your actual Render app URL
-    const apiUrl = `https://your-stock-api.onrender.com/api/stock/${ticker}`;
+    // **CHANGE**: Use a relative path for the API URL
+    const apiUrl = `/api/stock/${ticker}`;
 
     dataContainer.innerHTML = '<p>Loading...</p>';
 
     fetch(apiUrl)
         .then(response => {
             if (!response.ok) {
-                // If we get a 404 or other error, handle it here
                 return response.json().then(err => { throw new Error(err.error) });
             }
             return response.json();
         })
         .then(data => {
-            // Display the successfully fetched data
             dataContainer.innerHTML = `
                 <h2>${data.longName} (${data.symbol})</h2>
                 <ul>
@@ -36,7 +34,6 @@ function fetchData() {
             `;
         })
         .catch(error => {
-            // Display any errors to the user
             console.error('Fetch Error:', error);
             dataContainer.innerHTML = `<p style="color: red;">Error: ${error.message}. Please try another ticker.</p>`;
         });
