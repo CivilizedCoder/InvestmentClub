@@ -21,13 +21,17 @@ database_url = os.environ.get('DATABASE_URL')
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-# FIX 2: Append sslmode=require to fix SSL connection errors on Render
-if database_url and "sslmode" not in database_url:
-    database_url += "?sslmode=require"
-
 # We are telling SQLAlchemy where to find our database.
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# FINAL FIX: Explicitly set SSL mode in engine options for a robust connection.
+# This is a more reliable method than modifying the URL string.
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'connect_args': {
+        'sslmode': 'require'
+    }
+}
 
 # Now, associate the database with the app instance.
 db.init_app(app)
