@@ -11,8 +11,14 @@ app = Flask(__name__,
 
 # --- DATABASE CONFIGURATION ---
 # Render provides the database URL via an environment variable.
+database_url = os.environ.get('DATABASE_URL')
+
+# FIX: Replace 'postgres://' with 'postgresql://' for SQLAlchemy compatibility
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
 # We are telling SQLAlchemy where to find our database.
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize the SQLAlchemy database extension
