@@ -3,15 +3,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBAL STATE ---
     let stockChart, timelineChart, portfolioChart;
     let currentStockData = null;
-    let portfolio = JSON.parse(localStorage.getItem('stockPortfolio')) || [];
+    let portfolio = []; // This will now be populated from the database
 
     // --- INITIALIZATION ---
-    initializeTabs();
-    initializeEventListeners();
-    renderPortfolioList();
-    if (portfolio.length > 0) {
-        renderPortfolioChart();
+    async function initialize() {
+        initializeTabs();
+        initializeEventListeners();
+        await fetchPortfolio(); // Fetch data from the database on load
+        renderPortfolioList();
+        if (portfolio.length > 0) {
+            renderPortfolioChart();
+        }
     }
+
+    initialize();
 
     // --- EVENT LISTENERS SETUP ---
     function initializeEventListeners() {
@@ -20,7 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('isRealCheckbox').addEventListener('change', toggleRealPurchaseInputs);
         document.getElementById('addToPortfolioBtn').addEventListener('click', addStockToPortfolio);
         document.querySelectorAll('.timeframe-btn').forEach(btn => btn.addEventListener('click', handleTimeframeChange));
-        // Add listener for new purchase type radio buttons
         document.querySelectorAll('input[name="purchaseType"]').forEach(radio => {
             radio.addEventListener('change', togglePurchaseTypeInputs);
         });
@@ -30,21 +34,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializeTabs() {
         const tabButtons = document.querySelectorAll('.tab-btn');
         const tabContents = document.querySelectorAll('.tab-content');
-
         tabButtons.forEach(button => {
             button.addEventListener('click', () => {
                 const tab = button.dataset.tab;
-
                 tabButtons.forEach(btn => btn.classList.remove('active'));
                 button.classList.add('active');
-
                 tabContents.forEach(content => {
                     content.classList.remove('active-content');
                     if (content.id === `${tab}Content`) {
                         content.classList.add('active-content');
                     }
                 });
-                
                 if (tab === 'portfolio' && portfolio.length > 0) {
                     renderPortfolioChart();
                 }
@@ -56,11 +56,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function fetchStockData() {
         const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
         if (!ticker) return;
-
         const welcomeMessage = document.getElementById('welcomeMessage');
         welcomeMessage.innerHTML = '<p>Loading...</p>';
         document.getElementById('stockDataView').classList.add('hidden');
-
         fetch(`/api/stock/${ticker}`)
             .then(response => response.ok ? response.json() : response.json().then(err => { throw new Error(err.error) }))
             .then(data => {
@@ -80,7 +78,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateStockInfoUI(data) {
         const formatCurrency = (val) => val ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
         const formatLargeNumber = (val) => val ? Number(val).toLocaleString() : 'N/A';
-        
         document.getElementById('stockName').textContent = data.longName || 'N/A';
         document.getElementById('stockSymbol').textContent = data.symbol || 'N/A';
         document.getElementById('currentPrice').textContent = formatCurrency(data.currentPrice);
@@ -97,18 +94,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function setupIndividualStockChart(historicalData) {
         if (stockChart) stockChart.destroy();
         if (timelineChart) timelineChart.destroy();
-
         const stockData = historicalData.map(d => ({ date: d.Date, price: d.Close }));
-
         Chart.defaults.color = '#E5E7EB';
         Chart.defaults.font.family = "'Inter', sans-serif";
-
         const mainCtx = document.getElementById('stockChart').getContext('2d');
         stockChart = new Chart(mainCtx, createChartConfig('Stock Price (USD)'));
-
         const timelineCtx = document.getElementById('timelineChart').getContext('2d');
         timelineChart = new Chart(timelineCtx, createTimelineConfig(stockData));
-
         addTimelineInteraction(document.getElementById('timelineChart'), timelineChart, stockChart, stockData);
         updateMainChart(timelineChart, stockChart);
     }
@@ -116,13 +108,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function addTimelineInteraction(canvas, timeline, mainChart, data) {
         let isDragging = false, isResizingStart = false, isResizingEnd = false;
         let dragStartX = 0, initialStartIndex = 0, initialEndIndex = 0;
-
         const getIndexFromX = (x) => {
             const { left, right } = timeline.chartArea;
             const index = Math.round((x - left) / (right - left) * (data.length - 1));
             return Math.max(0, Math.min(data.length - 1, index));
         };
-
         canvas.addEventListener('mousedown', (e) => {
             const x = e.offsetX;
             const meta = timeline.getDatasetMeta(0);
@@ -137,7 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 initialEndIndex = endIndex;
             }
         });
-
         window.addEventListener('mousemove', (e) => {
             if (!isDragging && !isResizingStart && !isResizingEnd) return;
             const x = e.clientX - canvas.getBoundingClientRect().left;
@@ -170,20 +159,23 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('dateRangeDisplay').textContent = `${slicedLabels[0]} to ${slicedLabels[slicedLabels.length - 1]}`;
     }
 
-    // --- PORTFOLIO MANAGEMENT ---
+    // --- DATABASE-DRIVEN PORTFOLIO MANAGEMENT ---
+    async function fetchPortfolio() {
+        const response = await fetch('/api/portfolio');
+        portfolio = await response.json();
+    }
+
     function toggleRealPurchaseInputs() {
         document.getElementById('realPurchaseInputs').classList.toggle('hidden', !this.checked);
     }
 
-    // NEW: Toggles between Quantity and Value inputs
     function togglePurchaseTypeInputs() {
         const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
         document.getElementById('quantityInputs').classList.toggle('hidden', purchaseType !== 'quantity');
         document.getElementById('valueInputs').classList.toggle('hidden', purchaseType === 'quantity');
     }
 
-    // UPDATED: Handles both purchase types
-    function addStockToPortfolio() {
+    async function addStockToPortfolio() {
         if (!currentStockData) return;
         const isReal = document.getElementById('isRealCheckbox').checked;
         const newHolding = {
@@ -196,15 +188,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
             newHolding.purchaseType = purchaseType;
             newHolding.date = document.getElementById('purchaseDate').value;
-
             if (purchaseType === 'quantity') {
                 newHolding.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
                 newHolding.price = parseFloat(document.getElementById('purchasePrice').value);
                 if (isNaN(newHolding.quantity) || isNaN(newHolding.price) || !newHolding.date) {
-                    alert("Please fill in all purchase details for a quantity-based holding."); return;
+                    alert("Please fill in all details for a quantity-based holding."); return;
                 }
                 newHolding.dollarValue = newHolding.quantity * newHolding.price;
-            } else { // purchaseType === 'value'
+            } else {
                 newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
                 if (isNaN(newHolding.dollarValue) || !newHolding.date) {
                     alert("Please fill in dollar value and date for a value-based holding."); return;
@@ -215,95 +206,94 @@ document.addEventListener('DOMContentLoaded', () => {
         if (portfolio.find(item => item.symbol === newHolding.symbol)) {
             alert(`${newHolding.symbol} is already in your portfolio.`); return;
         }
-        portfolio.push(newHolding);
-        savePortfolio();
-        renderPortfolioList();
-        renderPortfolioChart();
-        document.getElementById('isRealCheckbox').checked = false;
-        document.getElementById('realPurchaseInputs').classList.add('hidden');
+
+        const response = await fetch('/api/portfolio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newHolding)
+        });
+
+        if (response.ok) {
+            const addedHolding = await response.json();
+            portfolio.push(addedHolding);
+            renderPortfolioList();
+            renderPortfolioChart();
+            document.getElementById('isRealCheckbox').checked = false;
+            document.getElementById('realPurchaseInputs').classList.add('hidden');
+        } else {
+            alert("Failed to add holding to the database.");
+        }
     }
 
-    // UPDATED: Renders details based on purchase type
     function renderPortfolioList() {
         const listEl = document.getElementById('portfolioList');
         listEl.innerHTML = '';
         document.getElementById('emptyPortfolioMsg').classList.toggle('hidden', portfolio.length > 0);
-        portfolio.forEach((item, index) => {
+        portfolio.forEach(item => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'portfolio-item';
-            
             let details;
             if (item.isReal) {
-                if (item.purchaseType === 'quantity') {
-                    details = `(${item.quantity} shares @ $${item.price.toFixed(2)})`;
-                } else {
-                    details = `($${item.dollarValue.toLocaleString()} invested)`;
-                }
+                details = item.purchaseType === 'quantity'
+                    ? `(${item.quantity} shares @ $${item.price.toFixed(2)})`
+                    : `($${item.dollarValue.toLocaleString()} invested)`;
             } else {
                 details = '(Tracking)';
             }
-
             itemDiv.innerHTML = `
                 <div class="flex justify-between items-center">
                     <div><p class="font-bold">${item.symbol}</p><p class="text-sm text-gray-400">${item.longName}</p></div>
-                    <div class="text-right"><p class="font-semibold">${details}</p><button class="remove-btn" data-index="${index}">Remove</button></div>
+                    <div class="text-right"><p class="font-semibold">${details}</p><button class="remove-btn" data-id="${item.id}">Remove</button></div>
                 </div>`;
             listEl.appendChild(itemDiv);
         });
         document.querySelectorAll('.remove-btn').forEach(btn => btn.addEventListener('click', removePortfolioItem));
     }
 
-    function removePortfolioItem(event) {
-        portfolio.splice(event.target.dataset.index, 1);
-        savePortfolio();
-        renderPortfolioList();
-        renderPortfolioChart();
-    }
-
-    function savePortfolio() {
-        localStorage.setItem('stockPortfolio', JSON.stringify(portfolio));
+    async function removePortfolioItem(event) {
+        const holdingId = event.target.dataset.id;
+        const response = await fetch(`/api/portfolio/${holdingId}`, { method: 'DELETE' });
+        if (response.ok) {
+            portfolio = portfolio.filter(p => p.id != holdingId);
+            renderPortfolioList();
+            renderPortfolioChart();
+        } else {
+            alert("Failed to remove holding.");
+        }
     }
 
     // --- PORTFOLIO CHART & ANALYSIS ---
     async function renderPortfolioChart() {
         const realHoldings = portfolio.filter(p => p.isReal);
         const trackingHoldings = portfolio.filter(p => !p.isReal);
-
         let holdingsForCalc, isWeighted;
-
         if (realHoldings.length > 0) {
-            holdingsForCalc = realHoldings;
-            isWeighted = true;
+            holdingsForCalc = realHoldings; isWeighted = true;
         } else if (trackingHoldings.length > 0) {
-            holdingsForCalc = trackingHoldings;
-            isWeighted = false;
+            holdingsForCalc = trackingHoldings; isWeighted = false;
         } else {
             if (portfolioChart) portfolioChart.destroy();
             document.getElementById('portfolioTotalReturn').textContent = '';
             return;
         }
-
         const tickers = holdingsForCalc.map(p => p.symbol);
-        const response = await fetch('/api/portfolio', {
+        const response = await fetch('/api/portfolio_data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tickers })
         });
         const data = await response.json();
-        
         const dates = Object.keys(data);
         const normalizedData = {};
         tickers.forEach(ticker => {
             const firstPrice = data[dates[0]][ticker];
             normalizedData[ticker] = dates.map(date => ((data[date][ticker] - firstPrice) / firstPrice) * 100);
         });
-
         let portfolioPerformance;
         if (isWeighted) {
             const totalInvestment = holdingsForCalc.reduce((sum, h) => sum + h.dollarValue, 0);
             const weights = {};
             holdingsForCalc.forEach(h => { weights[h.symbol] = h.dollarValue / totalInvestment; });
-
             portfolioPerformance = dates.map((_, i) => {
                 let weightedSum = 0;
                 holdingsForCalc.forEach(h => { weightedSum += normalizedData[h.symbol][i] * weights[h.symbol]; });
@@ -316,12 +306,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return sum / holdingsForCalc.length;
             });
         }
-
         if (portfolioChart) portfolioChart.destroy();
         const portfolioCtx = document.getElementById('portfolioChart').getContext('2d');
         portfolioChart = new Chart(portfolioCtx, createChartConfig('Portfolio Performance (%)'));
         portfolioChart.allData = { labels: dates, data: portfolioPerformance };
-        
         handleTimeframeChange({ target: document.querySelector('.timeframe-btn.active') });
     }
 
@@ -329,25 +317,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const button = event.target;
         document.querySelectorAll('.timeframe-btn').forEach(btn => btn.classList.remove('active'));
         button.classList.add('active');
-
         if (!portfolioChart || !portfolioChart.allData) return;
-        
         const range = button.dataset.range;
         const { labels, data } = portfolioChart.allData;
         const days = { '1M': 21, '3M': 63, '6M': 126, '1Y': 252, '5Y': 1260 };
-        
         let slicedLabels = labels;
         let slicedData = data;
-
         if (range !== 'ALL' && days[range] < labels.length) {
             slicedLabels = labels.slice(-days[range]);
             slicedData = data.slice(-days[range]);
         }
-
         portfolioChart.data.labels = slicedLabels;
         portfolioChart.data.datasets[0].data = slicedData;
         portfolioChart.update();
-
         const totalReturn = slicedData.length > 1 ? slicedData[slicedData.length - 1] - slicedData[0] : 0;
         const returnEl = document.getElementById('portfolioTotalReturn');
         returnEl.textContent = `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`;

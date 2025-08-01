@@ -2,3 +2,5 @@ Flask
 Flask-Cors
 yfinance
 gunicorn
+Flask-SQLAlchemy
+psycopg2-binary
