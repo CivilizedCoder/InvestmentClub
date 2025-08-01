@@ -20,6 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('isRealCheckbox').addEventListener('change', toggleRealPurchaseInputs);
         document.getElementById('addToPortfolioBtn').addEventListener('click', addStockToPortfolio);
         document.querySelectorAll('.timeframe-btn').forEach(btn => btn.addEventListener('click', handleTimeframeChange));
+        // Add listener for new purchase type radio buttons
+        document.querySelectorAll('input[name="purchaseType"]').forEach(radio => {
+            radio.addEventListener('change', togglePurchaseTypeInputs);
+        });
     }
 
     // --- TAB HANDLING ---
@@ -41,7 +45,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
                 
-                // Refresh portfolio chart when tab is clicked
                 if (tab === 'portfolio' && portfolio.length > 0) {
                     renderPortfolioChart();
                 }
@@ -172,6 +175,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('realPurchaseInputs').classList.toggle('hidden', !this.checked);
     }
 
+    // NEW: Toggles between Quantity and Value inputs
+    function togglePurchaseTypeInputs() {
+        const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
+        document.getElementById('quantityInputs').classList.toggle('hidden', purchaseType !== 'quantity');
+        document.getElementById('valueInputs').classList.toggle('hidden', purchaseType === 'quantity');
+    }
+
+    // UPDATED: Handles both purchase types
     function addStockToPortfolio() {
         if (!currentStockData) return;
         const isReal = document.getElementById('isRealCheckbox').checked;
@@ -182,13 +193,25 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         if (isReal) {
-            // NOTE: This assumes your HTML has an input with id="purchaseValue"
-            newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
+            const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
+            newHolding.purchaseType = purchaseType;
             newHolding.date = document.getElementById('purchaseDate').value;
-            if (isNaN(newHolding.dollarValue) || !newHolding.date) {
-                alert("Please fill in dollar value and date for a real holding."); return;
+
+            if (purchaseType === 'quantity') {
+                newHolding.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
+                newHolding.price = parseFloat(document.getElementById('purchasePrice').value);
+                if (isNaN(newHolding.quantity) || isNaN(newHolding.price) || !newHolding.date) {
+                    alert("Please fill in all purchase details for a quantity-based holding."); return;
+                }
+                newHolding.dollarValue = newHolding.quantity * newHolding.price;
+            } else { // purchaseType === 'value'
+                newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
+                if (isNaN(newHolding.dollarValue) || !newHolding.date) {
+                    alert("Please fill in dollar value and date for a value-based holding."); return;
+                }
             }
         }
+
         if (portfolio.find(item => item.symbol === newHolding.symbol)) {
             alert(`${newHolding.symbol} is already in your portfolio.`); return;
         }
@@ -200,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('realPurchaseInputs').classList.add('hidden');
     }
 
+    // UPDATED: Renders details based on purchase type
     function renderPortfolioList() {
         const listEl = document.getElementById('portfolioList');
         listEl.innerHTML = '';
@@ -207,7 +231,18 @@ document.addEventListener('DOMContentLoaded', () => {
         portfolio.forEach((item, index) => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'portfolio-item';
-            let details = item.isReal ? `($${item.dollarValue.toLocaleString()} invested)` : '(Tracking)';
+            
+            let details;
+            if (item.isReal) {
+                if (item.purchaseType === 'quantity') {
+                    details = `(${item.quantity} shares @ $${item.price.toFixed(2)})`;
+                } else {
+                    details = `($${item.dollarValue.toLocaleString()} invested)`;
+                }
+            } else {
+                details = '(Tracking)';
+            }
+
             itemDiv.innerHTML = `
                 <div class="flex justify-between items-center">
                     <div><p class="font-bold">${item.symbol}</p><p class="text-sm text-gray-400">${item.longName}</p></div>
@@ -275,7 +310,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return weightedSum;
             });
         } else {
-            // Simple average for tracking-only portfolios
             portfolioPerformance = dates.map((_, i) => {
                 let sum = 0;
                 holdingsForCalc.forEach(h => sum += normalizedData[h.symbol][i]);

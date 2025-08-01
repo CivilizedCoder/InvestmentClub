@@ -80,9 +80,31 @@
                                     <label for="isRealCheckbox" class="ml-2 block text-sm text-gray-300">This is a real holding</label>
                                 </div>
                                 <div id="realPurchaseInputs" class="space-y-3 hidden">
-                                     <input type="number" id="purchaseQuantity" placeholder="Quantity" class="form-input">
-                                     <input type="number" id="purchasePrice" placeholder="Price per Share" class="form-input">
-                                     <input type="date" id="purchaseDate" class="form-input">
+                                    <!-- Purchase Type Toggle -->
+                                    <div class="flex items-center space-x-4 mb-2">
+                                        <label class="flex items-center text-sm cursor-pointer">
+                                            <input type="radio" name="purchaseType" value="quantity" class="form-radio" checked>
+                                            <span class="ml-2">By Quantity</span>
+                                        </label>
+                                        <label class="flex items-center text-sm cursor-pointer">
+                                            <input type="radio" name="purchaseType" value="value" class="form-radio">
+                                            <span class="ml-2">By Value</span>
+                                        </label>
+                                    </div>
+
+                                    <!-- By Quantity Inputs -->
+                                    <div id="quantityInputs" class="space-y-3">
+                                        <input type="number" id="purchaseQuantity" placeholder="Quantity (e.g., 10)" class="form-input">
+                                        <input type="number" id="purchasePrice" placeholder="Price per Share" class="form-input">
+                                    </div>
+
+                                    <!-- By Value (Fractional) Inputs -->
+                                    <div id="valueInputs" class="space-y-3 hidden">
+                                        <input type="number" id="purchaseValue" placeholder="Total Dollar Value (e.g., 500)" class="form-input">
+                                    </div>
+
+                                    <!-- Common Date Input -->
+                                    <input type="date" id="purchaseDate" class="form-input mt-3">
                                 </div>
                                 <button id="addToPortfolioBtn" class="button-success w-full mt-3">Add to Portfolio</button>
                             </div>
