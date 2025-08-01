@@ -182,11 +182,11 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         if (isReal) {
-            newHolding.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
-            newHolding.price = parseFloat(document.getElementById('purchasePrice').value);
+            // NOTE: This assumes your HTML has an input with id="purchaseValue"
+            newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
             newHolding.date = document.getElementById('purchaseDate').value;
-            if (isNaN(newHolding.quantity) || isNaN(newHolding.price) || !newHolding.date) {
-                alert("Please fill in all purchase details."); return;
+            if (isNaN(newHolding.dollarValue) || !newHolding.date) {
+                alert("Please fill in dollar value and date for a real holding."); return;
             }
         }
         if (portfolio.find(item => item.symbol === newHolding.symbol)) {
@@ -207,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
         portfolio.forEach((item, index) => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'portfolio-item';
-            let details = item.isReal ? `(${item.quantity} shares @ $${item.price})` : '(Tracking)';
+            let details = item.isReal ? `($${item.dollarValue.toLocaleString()} invested)` : '(Tracking)';
             itemDiv.innerHTML = `
                 <div class="flex justify-between items-center">
                     <div><p class="font-bold">${item.symbol}</p><p class="text-sm text-gray-400">${item.longName}</p></div>
@@ -231,13 +231,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- PORTFOLIO CHART & ANALYSIS ---
     async function renderPortfolioChart() {
-        if (portfolio.length === 0) {
+        const realHoldings = portfolio.filter(p => p.isReal);
+        const trackingHoldings = portfolio.filter(p => !p.isReal);
+
+        let holdingsForCalc, isWeighted;
+
+        if (realHoldings.length > 0) {
+            holdingsForCalc = realHoldings;
+            isWeighted = true;
+        } else if (trackingHoldings.length > 0) {
+            holdingsForCalc = trackingHoldings;
+            isWeighted = false;
+        } else {
             if (portfolioChart) portfolioChart.destroy();
             document.getElementById('portfolioTotalReturn').textContent = '';
             return;
         }
 
-        const tickers = portfolio.map(p => p.symbol);
+        const tickers = holdingsForCalc.map(p => p.symbol);
         const response = await fetch('/api/portfolio', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -245,7 +256,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const data = await response.json();
         
-        // Normalize data: Calculate percentage change from the first day for each stock
         const dates = Object.keys(data);
         const normalizedData = {};
         tickers.forEach(ticker => {
@@ -253,12 +263,25 @@ document.addEventListener('DOMContentLoaded', () => {
             normalizedData[ticker] = dates.map(date => ((data[date][ticker] - firstPrice) / firstPrice) * 100);
         });
 
-        // Calculate combined portfolio performance (simple average of normalized performance)
-        const portfolioPerformance = dates.map((_, i) => {
-            let sum = 0;
-            tickers.forEach(ticker => sum += normalizedData[ticker][i]);
-            return sum / tickers.length;
-        });
+        let portfolioPerformance;
+        if (isWeighted) {
+            const totalInvestment = holdingsForCalc.reduce((sum, h) => sum + h.dollarValue, 0);
+            const weights = {};
+            holdingsForCalc.forEach(h => { weights[h.symbol] = h.dollarValue / totalInvestment; });
+
+            portfolioPerformance = dates.map((_, i) => {
+                let weightedSum = 0;
+                holdingsForCalc.forEach(h => { weightedSum += normalizedData[h.symbol][i] * weights[h.symbol]; });
+                return weightedSum;
+            });
+        } else {
+            // Simple average for tracking-only portfolios
+            portfolioPerformance = dates.map((_, i) => {
+                let sum = 0;
+                holdingsForCalc.forEach(h => sum += normalizedData[h.symbol][i]);
+                return sum / holdingsForCalc.length;
+            });
+        }
 
         if (portfolioChart) portfolioChart.destroy();
         const portfolioCtx = document.getElementById('portfolioChart').getContext('2d');
@@ -291,8 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         portfolioChart.data.datasets[0].data = slicedData;
         portfolioChart.update();
 
-        // Update total return display
-        const totalReturn = slicedData[slicedData.length - 1] - slicedData[0];
+        const totalReturn = slicedData.length > 1 ? slicedData[slicedData.length - 1] - slicedData[0] : 0;
         const returnEl = document.getElementById('portfolioTotalReturn');
         returnEl.textContent = `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`;
         returnEl.style.color = totalReturn >= 0 ? '#34D399' : '#F87171';
