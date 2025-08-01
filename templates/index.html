@@ -3,17 +3,124 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Stock Data</title>
+    <title>Stock Analysis Dashboard</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for graphing -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
-    <h1>Stock Data Viewer</h1>
-    <input type="text" id="tickerInput" placeholder="Enter Ticker (e.g., GOOGL)" />
-    <button id="fetchBtn">Get Data</button>
-    <hr>
-    <div id="dataContainer">
-        <p>Enter a stock ticker and click "Get Data".</p>
-    </div>
 
+<body class="bg-gray-900 text-gray-200 antialiased">
+    <header class="bg-gray-800 shadow-lg p-4 flex justify-between items-center sticky top-0 z-50">
+        <h1 class="text-2xl font-bold text-cyan-400">📈 Stock Tracker</h1>
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="search">Stock Search</button>
+            <button class="tab-btn" data-tab="portfolio">Portfolio</button>
+        </div>
+    </header>
+
+    <main class="p-6">
+        <!-- Stock Search Tab Content -->
+        <div id="searchContent" class="tab-content active-content">
+            <div class="search-bar-container">
+                <input type="text" id="tickerInput" class="form-input" placeholder="Enter Ticker Symbol (e.g., AAPL, GOOGL)">
+                <button id="fetchBtn" class="button-primary">Search</button>
+            </div>
+            <div id="searchView" class="mt-6">
+                <div id="welcomeMessage" class="card text-center transition-all duration-500">
+                    <h2 class="text-2xl font-bold mb-2">Welcome to your Dashboard</h2>
+                    <p>Search for a stock ticker above to get started.</p>
+                </div>
+                <!-- This section will be populated with stock data after a search -->
+                <div id="stockDataView" class="hidden transition-all duration-500">
+                    <!-- Stock Header Info -->
+                    <div class="card mb-6">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <h2 id="stockName" class="text-3xl font-bold"></h2>
+                                <p id="stockSymbol" class="text-lg text-gray-400"></p>
+                            </div>
+                            <div class="text-right">
+                                <p id="currentPrice" class="text-4xl font-bold"></p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Chart and KPIs -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="lg:col-span-2 card">
+                            <div id="dateRangeDisplay" class="text-center text-gray-400 font-medium mb-4"></div>
+                            <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
+                            <div class="mt-8">
+                                <p class="text-center text-sm text-gray-500 mb-2">Timeline Navigator</p>
+                                <div id="timelineContainer" style="height: 100px;"><canvas id="timelineChart"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="card space-y-4">
+                            <h3 class="text-xl font-bold mb-2">Key Statistics</h3>
+                            <div class="kpi-grid">
+                                <div><p class="kpi-label">Day High</p><p id="dayHigh" class="kpi-value"></p></div>
+                                <div><p class="kpi-label">Day Low</p><p id="dayLow" class="kpi-value"></p></div>
+                                <div><p class="kpi-label">52-Wk High</p><p id="fiftyTwoWeekHigh" class="kpi-value"></p></div>
+                                <div><p class="kpi-label">52-Wk Low</p><p id="fiftyTwoWeekLow" class="kpi-value"></p></div>
+                                <div><p class="kpi-label">Market Cap</p><p id="marketCap" class="kpi-value"></p></div>
+                                <div><p class="kpi-label">Volume</p><p id="volume" class="kpi-value"></p></div>
+                                <div><p class="kpi-label">P/E Ratio</p><p id="forwardPE" class="kpi-value"></p></div>
+                            </div>
+                             <div id="addToPortfolioSection" class="pt-4 border-t border-gray-700">
+                                <h4 class="font-semibold mb-2">Add <span id="portfolioTicker"></span> to Portfolio</h4>
+                                <div class="flex items-center mb-3">
+                                    <input id="isRealCheckbox" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-cyan-600 focus:ring-cyan-500 bg-gray-700">
+                                    <label for="isRealCheckbox" class="ml-2 block text-sm text-gray-300">This is a real holding</label>
+                                </div>
+                                <div id="realPurchaseInputs" class="space-y-3 hidden">
+                                     <input type="number" id="purchaseQuantity" placeholder="Quantity" class="form-input">
+                                     <input type="number" id="purchasePrice" placeholder="Price per Share" class="form-input">
+                                     <input type="date" id="purchaseDate" class="form-input">
+                                </div>
+                                <button id="addToPortfolioBtn" class="button-success w-full mt-3">Add to Portfolio</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Portfolio Tab Content -->
+        <div id="portfolioContent" class="tab-content">
+             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Left: Portfolio Graph and Performance -->
+                <div class="lg:col-span-2 card">
+                    <h2 class="text-2xl font-bold mb-4">Portfolio Performance</h2>
+                    <div class="flex justify-center space-x-2 mb-4">
+                        <button class="timeframe-btn active" data-range="1M">1M</button>
+                        <button class="timeframe-btn" data-range="3M">3M</button>
+                        <button class="timeframe-btn" data-range="6M">6M</button>
+                        <button class="timeframe-btn" data-range="1Y">1Y</button>
+                        <button class="timeframe-btn" data-range="5Y">5Y</button>
+                        <button class="timeframe-btn" data-range="ALL">All</button>
+                    </div>
+                    <div id="portfolioTotalReturn" class="text-center text-4xl font-bold mb-4"></div>
+                    <div class="chart-container" style="height: 450px;"><canvas id="portfolioChart"></canvas></div>
+                </div>
+                <!-- Right: Holdings List -->
+                <div class="card">
+                    <h2 class="text-2xl font-bold mb-4">My Holdings</h2>
+                    <div id="portfolioList" class="space-y-4">
+                        <p id="emptyPortfolioMsg" class="text-gray-500">Your portfolio is empty. Add stocks from the 'Stock Search' tab.</p>
+                    </div>
+                </div>
+             </div>
+        </div>
+    </main>
+
+    <!-- Main JavaScript file -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
