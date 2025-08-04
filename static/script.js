@@ -367,7 +367,16 @@ document.addEventListener('DOMContentLoaded', () => {
         mainChart.data.labels = slicedLabels;
         mainChart.data.datasets[0].data = slicedData;
         mainChart.update('none');
-        document.getElementById('dateRangeDisplay').textContent = `${slicedLabels[0]} to ${slicedLabels[slicedLabels.length - 1]}`;
+        
+        // FIX: Add a check to prevent error on empty labels and get element safely
+        const dateRangeDisplay = document.getElementById('dateRangeDisplay');
+        if (dateRangeDisplay) {
+            if (slicedLabels && slicedLabels.length > 0) {
+                dateRangeDisplay.textContent = `${slicedLabels[0]} to ${slicedLabels[slicedLabels.length - 1]}`;
+            } else {
+                dateRangeDisplay.textContent = 'No date range available.';
+            }
+        }
     }
     
     async function renderPortfolioChart() {
