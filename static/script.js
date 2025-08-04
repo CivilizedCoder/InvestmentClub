@@ -4,105 +4,21 @@ document.addEventListener('DOMContentLoaded', () => {
     let stockChart, timelineChart;
     let currentStockData = null;
     let portfolio = [];
-    let currentUser = null;
 
     // --- INITIALIZATION ---
-    function initialize() {
-        document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
-        document.getElementById('logoutBtn')?.addEventListener('click', handleLogout);
-        checkSession();
-    }
-
-    // --- AUTHENTICATION & SESSION MANAGEMENT ---
-    async function checkSession() {
-        try {
-            const response = await fetch('/api/session');
-            if (!response.ok) throw new Error('No active session');
-            currentUser = await response.json();
-            showDashboard();
-        } catch (error) {
-            showLogin();
-        }
-    }
-
-    async function handleLogin(e) {
-        e.preventDefault();
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-        const errorDiv = document.getElementById('loginError');
-        errorDiv.classList.add('hidden');
-
-        try {
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Login failed');
-            }
-            currentUser = await response.json();
-            showDashboard();
-        } catch (error) {
-            errorDiv.textContent = error.message;
-            errorDiv.classList.remove('hidden');
-        }
-    }
-
-    async function handleLogout() {
-        await fetch('/api/logout', { method: 'POST' });
-        currentUser = null;
-        portfolio = [];
-        showLogin();
-    }
-
-    function showLogin() {
-        document.getElementById('loginScreen').classList.remove('hidden');
-        document.getElementById('dashboardScreen').classList.add('hidden');
-    }
-
-    async function showDashboard() {
-        document.getElementById('loginScreen').classList.add('hidden');
-        document.getElementById('dashboardScreen').classList.remove('hidden');
-        
-        setupUIAccess();
-        initializeDashboardEventListeners();
-
+    async function initialize() {
+        initializeEventListeners();
         await fetchPortfolio();
-        
-        document.querySelector('.nav-link[data-tab="home"]').click();
+        // Initial render of the home page content
+        renderPortfolioSummary();
     }
 
-    // --- UI & ACCESS CONTROL ---
-    function setupUIAccess() {
-        if (!currentUser) return;
-        const roles = { guest: 0, member: 1, admin: 2 };
-        const userLevel = roles[currentUser.role];
-
-        document.querySelectorAll('[data-role]').forEach(el => {
-            const requiredLevel = roles[el.dataset.role];
-            el.style.display = userLevel >= requiredLevel ? 'flex' : 'none';
-        });
-
-        const userInfoEl = document.getElementById('userInfo');
-        userInfoEl.innerHTML = `Logged in as: <strong class="font-bold">${currentUser.username}</strong><br>Role: <span class="capitalize">${currentUser.role}</span>`;
-    }
-
-    // --- DASHBOARD INITIALIZATION ---
-    function initializeDashboardEventListeners() {
+    // --- EVENT LISTENERS ---
+    function initializeEventListeners() {
         document.getElementById('fetchBtn')?.addEventListener('click', fetchStockData);
         document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && fetchStockData());
         document.getElementById('presentationForm')?.addEventListener('submit', handlePresentationSubmit);
 
-        // FIX: Re-clone the nav links to remove any old event listeners before adding new ones.
-        // This prevents duplicate listeners if the dashboard is re-initialized (e.g., after logout/login).
-        const navLinks = document.querySelectorAll('.nav-link');
-        navLinks.forEach(link => {
-            link.replaceWith(link.cloneNode(true));
-        });
-
-        // Add fresh event listeners to the new nodes
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -116,13 +32,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (content.id === `${tab}Content`) content.classList.remove('hidden');
                 });
                 
+                // Render content when a tab is clicked
                 switch (tab) {
                     case 'home': renderPortfolioSummary(); break;
                     case 'portfolio': renderPortfolioDashboard(); break;
                     case 'transactions': renderTransactionHistory(); break;
                     case 'presentations': renderPresentations(); break;
-                    case 'about': break; // No dynamic content needed
-                    case 'admin': break; // No dynamic content needed
                 }
             });
         });
@@ -148,16 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateStockInfoUI(data);
                 setupIndividualStockChart(data.historical);
                 
-                const addToPortfolioSection = document.getElementById('addToPortfolioSection');
-                if (currentUser.role === 'admin') {
-                    addToPortfolioSection.style.display = 'block';
-                    document.getElementById('isRealCheckbox').addEventListener('change', toggleRealPurchaseInputs);
-                    document.getElementById('addToPortfolioBtn').addEventListener('click', addStockToPortfolio);
-                    document.querySelectorAll('input[name="purchaseType"]').forEach(radio => radio.addEventListener('change', togglePurchaseTypeInputs));
-                    document.getElementById('portfolioTicker').textContent = data.symbol;
-                } else {
-                    addToPortfolioSection.style.display = 'none';
-                }
+                document.getElementById('isRealCheckbox').addEventListener('change', toggleRealPurchaseInputs);
+                document.getElementById('addToPortfolioBtn').addEventListener('click', addStockToPortfolio);
+                document.querySelectorAll('input[name="purchaseType"]').forEach(radio => radio.addEventListener('change', togglePurchaseTypeInputs));
+                document.getElementById('portfolioTicker').textContent = data.symbol;
             })
             .catch(error => {
                 homeDashboard.innerHTML = `<p class="text-red-400 text-center card">Error: ${error.message}</p>`;
@@ -167,8 +76,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateStockInfoUI(data) {
-        const formatCurrency = (val) => val ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
-        const formatLargeNumber = (val) => val ? Number(val).toLocaleString() : 'N/A';
+        const formatCurrency = (val) => val != null ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
+        const formatLargeNumber = (val) => val != null ? Number(val).toLocaleString() : 'N/A';
         
         document.getElementById('stockName').textContent = data.longName || 'N/A';
         document.getElementById('stockSymbol').textContent = data.symbol || 'N/A';
@@ -184,10 +93,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- DATABASE & PORTFOLIO LOGIC ---
     async function fetchPortfolio() {
-        if (currentUser.role === 'guest') {
-            portfolio = [];
-            return;
-        }
         try {
             const response = await fetch('/api/portfolio');
             if (!response.ok) throw new Error('Failed to fetch portfolio');
@@ -199,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function addStockToPortfolio() {
-        if (!currentStockData || currentUser.role !== 'admin') return;
+        if (!currentStockData) return;
         const isReal = document.getElementById('isRealCheckbox').checked;
         
         const newHolding = {
@@ -236,14 +141,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- RENDER FUNCTIONS FOR EACH TAB ---
     async function renderPortfolioSummary() {
         const homeDashboard = document.getElementById('homeDashboard');
-        const welcomeMessageHTML = `<div class="card text-center transition-all duration-500"><h2 class="text-2xl font-bold mb-2">Welcome, ${currentUser.username}!</h2><p>Search for a stock to get started, or check out the other tabs.</p></div>`;
-        
-        if (currentUser.role === 'guest') {
-            homeDashboard.innerHTML = welcomeMessageHTML;
-            return;
-        }
-
         homeDashboard.innerHTML = `<div id="portfolioSummary"><h3 class="text-2xl font-bold mb-4">Portfolio Snapshot</h3><div id="portfolioSummaryList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div></div>`;
+        
         const summaryList = document.getElementById('portfolioSummaryList');
         if (portfolio.length === 0) {
             summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings in portfolio yet.</p>';
@@ -260,15 +159,15 @@ document.addEventListener('DOMContentLoaded', () => {
             summaryList.innerHTML = '';
             portfolio.forEach(holding => {
                 const quote = quotes[holding.symbol];
-                const currentPrice = quote ? quote.currentPrice : holding.price;
-                const prevClose = quote ? quote.previousClose : holding.price;
-                const priceChange = currentPrice - prevClose;
+                const currentPrice = quote?.currentPrice ?? holding.price;
+                const prevClose = quote?.previousClose ?? holding.price;
+                const priceChange = (currentPrice != null && prevClose != null) ? currentPrice - prevClose : 0;
                 const priceChangePercent = prevClose > 0 ? (priceChange / prevClose) * 100 : 0;
                 const changeColor = priceChange >= 0 ? 'text-green-400' : 'text-red-400';
                 
                 const card = document.createElement('div');
                 card.className = 'summary-card';
-                card.innerHTML = `<div class="flex justify-between items-center"><p class="font-bold text-lg">${holding.symbol}</p><p class="font-semibold text-lg">${currentPrice ? '$' + currentPrice.toFixed(2) : 'N/A'}</p></div><p class="text-sm text-gray-400 truncate">${holding.longName}</p><div class="text-right mt-2 ${changeColor}"><span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span><span>(${priceChangePercent.toFixed(2)}%)</span></div>`;
+                card.innerHTML = `<div class="flex justify-between items-center"><p class="font-bold text-lg">${holding.symbol}</p><p class="font-semibold text-lg">${currentPrice != null ? '$' + currentPrice.toFixed(2) : 'N/A'}</p></div><p class="text-sm text-gray-400 truncate">${holding.longName}</p><div class="text-right mt-2 ${changeColor}"><span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span><span> (${priceChangePercent.toFixed(2)}%)</span></div>`;
                 summaryList.appendChild(card);
             });
         } catch (error) {
@@ -287,11 +186,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('tr');
             row.className = 'border-b border-gray-800 hover:bg-gray-800';
             
-            // FIX: Use stricter checks for numeric types before calling .toFixed()
             const quantityText = typeof item.quantity === 'number' ? `${item.quantity.toFixed(4)} shares` : 'N/A';
             const dollarValueText = typeof item.dollarValue === 'number' ? `$${item.dollarValue.toFixed(2)}` : 'N/A';
             const priceText = typeof item.price === 'number' ? `$${item.price.toFixed(2)}` : 'N/A';
-            
             const purchaseDetail = item.purchaseType === 'quantity' ? quantityText : (item.purchaseType === 'value' ? dollarValueText : 'N/A');
 
             row.innerHTML = `
@@ -309,8 +206,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderPresentations() {
         const listEl = document.getElementById('presentationList');
-        const formContainer = document.getElementById('presentationFormContainer');
-        formContainer.style.display = currentUser.role !== 'guest' ? '' : 'none';
         listEl.innerHTML = '<p class="card">Loading presentations...</p>';
         try {
             const response = await fetch('/api/presentations');
@@ -324,11 +219,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const card = document.createElement('div');
                 card.className = 'card';
                 const actionColor = p.action === 'Buy' ? 'text-green-400' : 'text-red-400';
-                const voteButtons = currentUser.role !== 'guest' ? `<button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button><button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>` : `<span class="text-sm text-gray-500">Login as member to vote</span>`;
+                const voteButtons = `<button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button><button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>`;
                 card.innerHTML = `<h4 class="text-xl font-bold">${p.title}</h4><p class="text-sm text-gray-400 mb-3">Proposing to <span class="font-bold ${actionColor}">${p.action} ${p.ticker}</span></p><a href="${p.url}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline mb-4 block">View Presentation</a><div class="flex items-center justify-end space-x-4">${voteButtons}</div>`;
                 listEl.appendChild(card);
             });
-            if (currentUser.role !== 'guest') listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));
+            listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));
         } catch (error) {
             listEl.innerHTML = '<p class="card text-red-400">Could not load presentations.</p>';
         }
@@ -351,7 +246,6 @@ document.addEventListener('DOMContentLoaded', () => {
         realHoldings.forEach(h => {
             const quantity = h.quantity || 0;
             const dollarValue = h.dollarValue || 0;
-            
             const currentPrice = quotes[h.symbol]?.currentPrice || h.price || 0;
             const currentValue = quantity * currentPrice;
             const sectorName = h.sector || 'Other';

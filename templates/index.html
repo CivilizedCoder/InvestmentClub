@@ -13,69 +13,39 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
-<body class="bg-gray-900 text-gray-200">
+<body class="bg-gray-900 text-gray-200 flex">
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 bg-gray-800 p-4 flex-shrink-0 h-screen sticky top-0">
+        <h1 class="text-2xl font-bold text-cyan-400 mb-8">📈 Investment Club</h1>
+        <nav class="flex flex-col space-y-2">
+            <a href="#" class="nav-link active" data-tab="home">Home</a>
+            <a href="#" class="nav-link" data-tab="portfolio">Portfolio</a>
+            <a href="#" class="nav-link" data-tab="transactions">Transactions</a>
+            <a href="#" class="nav-link" data-tab="presentations">Presentations</a>
+            <a href="#" class="nav-link" data-tab="about">About The Club</a>
+            <a href="#" class="nav-link" data-tab="admin">Admin Panel</a>
+        </nav>
+    </aside>
 
-    <!-- Login Screen -->
-    <div id="loginScreen" class="flex items-center justify-center h-screen w-screen">
-        <div class="w-full max-w-md">
-            <form id="loginForm" class="bg-gray-800 shadow-md rounded-lg px-8 pt-6 pb-8 mb-4">
-                <h1 class="text-2xl font-bold text-cyan-400 mb-6 text-center">📈 Investment Club Login</h1>
-                <div id="loginError" class="text-red-400 text-center mb-4 hidden"></div>
-                <div class="mb-4">
-                    <label class="block text-gray-300 text-sm font-bold mb-2" for="username">Username</label>
-                    <input class="form-input" id="username" type="text" placeholder="Username" required>
-                </div>
-                <div class="mb-6">
-                    <label class="block text-gray-300 text-sm font-bold mb-2" for="password">Password</label>
-                    <input class="form-input" id="password" type="password" placeholder="******************" required>
-                </div>
-                <div class="flex items-center justify-between">
-                    <button class="button-primary w-full" type="submit">Sign In</button>
-                </div>
-            </form>
+    <!-- Main Content Area -->
+    <main class="flex-grow p-6 overflow-auto">
+        <!-- Home Page Content -->
+        <div id="homeContent" class="tab-content active-content">
+            <h2 class="text-3xl font-bold mb-4">Home & Stock Search</h2>
+            <div class="search-bar-container mb-6">
+                <input type="text" id="tickerInput" class="form-input" placeholder="Enter Ticker Symbol (e.g., AAPL, GOOGL)">
+                <button id="fetchBtn" class="button-primary">Search</button>
+            </div>
+            <div id="homeDashboard"></div>
+            <div id="stockDataView" class="hidden transition-all duration-500"></div>
         </div>
-    </div>
 
-    <!-- Main Dashboard Screen (hidden by default) -->
-    <div id="dashboardScreen" class="hidden w-full h-screen flex">
-        <!-- Sidebar Navigation -->
-        <aside class="w-64 bg-gray-800 p-4 flex-shrink-0 h-screen sticky top-0 flex flex-col">
-            <div>
-                <h1 class="text-2xl font-bold text-cyan-400 mb-8">📈 Investment Club</h1>
-                <nav class="flex flex-col space-y-2">
-                    <a href="#" class="nav-link active" data-tab="home" data-role="guest">Home</a>
-                    <a href="#" class="nav-link" data-tab="portfolio" data-role="member">Portfolio</a>
-                    <a href="#" class="nav-link" data-tab="transactions" data-role="member">Transactions</a>
-                    <a href="#" class="nav-link" data-tab="presentations" data-role="member">Presentations</a>
-                    <a href="#" class="nav-link" data-tab="about" data-role="guest">About The Club</a>
-                    <a href="#" class="nav-link" data-tab="admin" data-role="admin">Admin Panel</a>
-                </nav>
-            </div>
-            <div class="mt-auto">
-                <div id="userInfo" class="text-center text-gray-400 text-sm mb-4"></div>
-                <button id="logoutBtn" class="button-primary w-full bg-red-600 hover:bg-red-700">Logout</button>
-            </div>
-        </aside>
-
-        <!-- Main Content Area -->
-        <main class="flex-grow p-6 overflow-auto">
-            <!-- Home Page Content -->
-            <div id="homeContent" class="tab-content active-content">
-                <h2 class="text-3xl font-bold mb-4">Home & Stock Search</h2>
-                <div class="search-bar-container mb-6">
-                    <input type="text" id="tickerInput" class="form-input" placeholder="Enter Ticker Symbol (e.g., AAPL, GOOGL)">
-                    <button id="fetchBtn" class="button-primary">Search</button>
-                </div>
-                <div id="homeDashboard"></div>
-                <div id="stockDataView" class="hidden transition-all duration-500"></div>
-            </div>
-
-            <!-- About Page Content -->
-            <div id="aboutContent" class="tab-content hidden">
-                <h2 class="text-3xl font-bold mb-4">About The Club</h2>
-                <div class="card">
-                    <h3 class="text-xl font-semibold mb-4 text-cyan-400">Welcome to the Investment Club Website!</h3>
-                    <p class="whitespace-pre-line">
+        <!-- About Page Content -->
+        <div id="aboutContent" class="tab-content hidden">
+            <h2 class="text-3xl font-bold mb-4">About The Club</h2>
+            <div class="card">
+                <h3 class="text-xl font-semibold mb-4 text-cyan-400">Welcome to the Investment Club Website!</h3>
+                <p class="whitespace-pre-line">
 Welcome to Muskingum University Investment Club! 
 We are a student-run organization dedicated to exploring financial 
 markets, investment strategies, and wealth management. Our members 
@@ -84,72 +54,71 @@ to develop a strong understanding of investing. Whether you're a
 beginner or an experienced investor, our club provides opportunities to 
 learn, collaborate, and make informed financial decisions. Join us to 
 gain hands-on experience and build a strong foundation in investing!
-                    </p>
+                </p>
+            </div>
+        </div>
+
+        <!-- Transactions Page Content -->
+        <div id="transactionsContent" class="tab-content hidden">
+            <h2 class="text-3xl font-bold mb-4">Transaction History</h2>
+            <div class="card">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="border-b border-gray-600">
+                            <tr>
+                                <th class="p-3">Date</th><th class="p-3">Symbol</th><th class="p-3">Name</th>
+                                <th class="p-3">Type</th><th class="p-3 text-right">Quantity/Value</th>
+                                <th class="p-3 text-right">Price</th><th class="p-3 text-right">Total Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactionList"></tbody>
+                    </table>
                 </div>
             </div>
+        </div>
 
-            <!-- Transactions Page Content -->
-            <div id="transactionsContent" class="tab-content hidden">
-                <h2 class="text-3xl font-bold mb-4">Transaction History</h2>
-                <div class="card">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left">
-                            <thead class="border-b border-gray-600">
-                                <tr>
-                                    <th class="p-3">Date</th><th class="p-3">Symbol</th><th class="p-3">Name</th>
-                                    <th class="p-3">Type</th><th class="p-3 text-right">Quantity/Value</th>
-                                    <th class="p-3 text-right">Price</th><th class="p-3 text-right">Total Cost</th>
-                                </tr>
-                            </thead>
-                            <tbody id="transactionList"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Presentations Page Content -->
-            <div id="presentationsContent" class="tab-content hidden">
-                <h2 class="text-3xl font-bold mb-4">Member Presentations</h2>
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 space-y-6" id="presentationList"></div>
-                    <div class="card" id="presentationFormContainer">
-                        <h3 class="text-xl font-bold mb-4">Submit a Presentation</h3>
-                        <form id="presentationForm" class="space-y-4">
-                            <input type="text" id="presentationTitle" class="form-input" placeholder="Presentation Title" required>
-                            <input type="url" id="presentationUrl" class="form-input" placeholder="URL to Slides/Document" required>
-                            <input type="text" id="presentationTicker" class="form-input" placeholder="Stock Ticker (e.g., AAPL)" required>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-2">Proposed Action</label>
-                                <div class="flex items-center space-x-4">
-                                    <label class="flex items-center text-sm cursor-pointer"><input type="radio" name="presentationAction" value="Buy" class="form-radio" checked><span class="ml-2">Buy</span></label>
-                                    <label class="flex items-center text-sm cursor-pointer"><input type="radio" name="presentationAction" value="Sell" class="form-radio"><span class="ml-2">Sell</span></label>
-                                </div>
+        <!-- Presentations Page Content -->
+        <div id="presentationsContent" class="tab-content hidden">
+            <h2 class="text-3xl font-bold mb-4">Member Presentations</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 space-y-6" id="presentationList"></div>
+                <div class="card" id="presentationFormContainer">
+                    <h3 class="text-xl font-bold mb-4">Submit a Presentation</h3>
+                    <form id="presentationForm" class="space-y-4">
+                        <input type="text" id="presentationTitle" class="form-input" placeholder="Presentation Title" required>
+                        <input type="url" id="presentationUrl" class="form-input" placeholder="URL to Slides/Document" required>
+                        <input type="text" id="presentationTicker" class="form-input" placeholder="Stock Ticker (e.g., AAPL)" required>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">Proposed Action</label>
+                            <div class="flex items-center space-x-4">
+                                <label class="flex items-center text-sm cursor-pointer"><input type="radio" name="presentationAction" value="Buy" class="form-radio" checked><span class="ml-2">Buy</span></label>
+                                <label class="flex items-center text-sm cursor-pointer"><input type="radio" name="presentationAction" value="Sell" class="form-radio"><span class="ml-2">Sell</span></label>
                             </div>
-                            <button type="submit" class="button-primary w-full">Submit</button>
-                        </form>
-                    </div>
+                        </div>
+                        <button type="submit" class="button-primary w-full">Submit</button>
+                    </form>
                 </div>
             </div>
+        </div>
 
-            <!-- Portfolio Page Content -->
-            <div id="portfolioContent" class="tab-content hidden">
-                <h2 class="text-3xl font-bold mb-4">Portfolio Dashboard</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <div class="card text-center"><h4 class="text-lg font-semibold text-gray-400">Total Current Value</h4><p id="portfolioTotalValue" class="text-3xl font-bold text-cyan-400 mt-2">$0.00</p></div>
-                    <div class="card text-center"><h4 class="text-lg font-semibold text-gray-400">Total Invested (Cost)</h4><p id="portfolioTotalCost" class="text-3xl font-bold mt-2">$0.00</p></div>
-                    <div class="card text-center"><h4 class="text-lg font-semibold text-gray-400">Total Net Earnings</h4><p id="portfolioTotalEarnings" class="text-3xl font-bold mt-2">$0.00</p></div>
-                </div>
-                <h3 class="text-2xl font-bold mb-4">Sector Allocation</h3>
-                <div id="sectorBreakdown" class="space-y-6"></div>
+        <!-- Portfolio Page Content -->
+        <div id="portfolioContent" class="tab-content hidden">
+            <h2 class="text-3xl font-bold mb-4">Portfolio Dashboard</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="card text-center"><h4 class="text-lg font-semibold text-gray-400">Total Current Value</h4><p id="portfolioTotalValue" class="text-3xl font-bold text-cyan-400 mt-2">$0.00</p></div>
+                <div class="card text-center"><h4 class="text-lg font-semibold text-gray-400">Total Invested (Cost)</h4><p id="portfolioTotalCost" class="text-3xl font-bold mt-2">$0.00</p></div>
+                <div class="card text-center"><h4 class="text-lg font-semibold text-gray-400">Total Net Earnings</h4><p id="portfolioTotalEarnings" class="text-3xl font-bold mt-2">$0.00</p></div>
             </div>
+            <h3 class="text-2xl font-bold mb-4">Sector Allocation</h3>
+            <div id="sectorBreakdown" class="space-y-6"></div>
+        </div>
 
-            <!-- Admin Panel Page Content -->
-            <div id="adminContent" class="tab-content hidden">
-                <h2 class="text-3xl font-bold mb-4">Admin Panel</h2>
-                <div class="card"><p>This section is for administrators to manage club operations.</p></div>
-            </div>
-        </main>
-    </div>
+        <!-- Admin Panel Page Content -->
+        <div id="adminContent" class="tab-content hidden">
+            <h2 class="text-3xl font-bold mb-4">Admin Panel</h2>
+            <div class="card"><p>This section is for administrators to manage club operations.</p></div>
+        </div>
+    </main>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

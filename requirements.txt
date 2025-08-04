@@ -4,5 +4,3 @@ yfinance
 gunicorn
 Flask-SQLAlchemy
 psycopg2
-Flask-Login
-Werkzeug
