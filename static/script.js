@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeTabs();
         initializeEventListeners();
         await fetchPortfolio(); // Fetch data from the database on load
-        renderPortfolioList();
+        renderAllPortfolioViews(); // NEW: Single function to render all portfolio elements
         if (portfolio.length > 0) {
             renderPortfolioChart();
         }
@@ -51,27 +51,26 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
-
+    
     // --- STOCK SEARCH FUNCTIONALITY ---
     function fetchStockData() {
         const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
         if (!ticker) return;
-        const welcomeMessage = document.getElementById('welcomeMessage');
-        welcomeMessage.innerHTML = '<p>Loading...</p>';
+        document.getElementById('homeDashboard').innerHTML = '<p class="text-center">Loading...</p>';
         document.getElementById('stockDataView').classList.add('hidden');
         fetch(`/api/stock/${ticker}`)
             .then(response => response.ok ? response.json() : response.json().then(err => { throw new Error(err.error) }))
             .then(data => {
                 currentStockData = data;
-                welcomeMessage.classList.add('hidden');
-                document.getElementById('stockDataView').classList.remove('hidden');
+                document.getElementById('homeDashboard').classList.add('hidden'); // Hide summary/welcome
+                document.getElementById('stockDataView').classList.remove('hidden'); // Show stock details
                 updateStockInfoUI(data);
                 setupIndividualStockChart(data.historical);
                 document.getElementById('portfolioTicker').textContent = data.symbol;
             })
             .catch(error => {
-                welcomeMessage.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
-                welcomeMessage.classList.remove('hidden');
+                document.getElementById('homeDashboard').innerHTML = `<p class="text-red-400 text-center">Error: ${error.message}</p>`;
+                document.getElementById('homeDashboard').classList.remove('hidden');
             });
     }
 
@@ -89,7 +88,138 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('volume').textContent = formatLargeNumber(data.volume);
         document.getElementById('forwardPE').textContent = data.forwardPE ? data.forwardPE.toFixed(2) : 'N/A';
     }
+    
+    // --- DATABASE-DRIVEN PORTFOLIO MANAGEMENT ---
+    async function fetchPortfolio() {
+        try {
+            const response = await fetch('/api/portfolio');
+            if (!response.ok) throw new Error('Failed to fetch portfolio');
+            portfolio = await response.json();
+        } catch (error) {
+            console.error("Fetch portfolio error:", error);
+            portfolio = [];
+        }
+    }
+    
+    // NEW: Unified function to render all portfolio views safely
+    async function renderAllPortfolioViews() {
+        // Render the main list on the Portfolio tab
+        const listEl = document.getElementById('portfolioList');
+        if (listEl) {
+            listEl.innerHTML = '';
+            const emptyMsg = document.getElementById('emptyPortfolioMsg');
+            if(emptyMsg) emptyMsg.classList.toggle('hidden', portfolio.length > 0);
 
+            portfolio.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'portfolio-item';
+                let details = item.isReal ? (item.purchaseType === 'quantity' ? `(${item.quantity} shares @ $${item.price.toFixed(2)})` : `($${item.dollarValue.toLocaleString()} invested)`) : '(Tracking)';
+                itemDiv.innerHTML = `<div class="flex justify-between items-center"><div><p class="font-bold">${item.symbol}</p><p class="text-sm text-gray-400">${item.longName}</p></div><div class="text-right"><p class="font-semibold">${details}</p><button class="remove-btn" data-id="${item.id}">Remove</button></div></div>`;
+                listEl.appendChild(itemDiv);
+            });
+            listEl.querySelectorAll('.remove-btn').forEach(btn => btn.addEventListener('click', removePortfolioItem));
+        }
+
+        // Render the summary on the Home page
+        const welcomeMessage = document.getElementById('welcomeMessage');
+        const portfolioSummary = document.getElementById('portfolioSummary');
+        const summaryList = document.getElementById('portfolioSummaryList');
+
+        if (portfolio.length === 0) {
+            if (welcomeMessage) welcomeMessage.classList.remove('hidden');
+            if (portfolioSummary) portfolioSummary.classList.add('hidden');
+            return;
+        }
+
+        if (welcomeMessage) welcomeMessage.classList.add('hidden');
+        if (portfolioSummary) portfolioSummary.classList.remove('hidden');
+        if (summaryList) summaryList.innerHTML = '<p>Loading live prices...</p>';
+
+        try {
+            const tickers = portfolio.map(p => p.symbol);
+            const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
+            if (!response.ok) throw new Error('Failed to fetch quotes');
+            
+            const quotes = await response.json();
+            if (summaryList) summaryList.innerHTML = '';
+
+            portfolio.forEach(holding => {
+                const quote = quotes[holding.symbol];
+                const currentPrice = quote ? quote.currentPrice : null;
+                const prevClose = quote ? quote.previousClose : null;
+                let priceChange = 0, priceChangePercent = 0;
+                if (currentPrice && prevClose) {
+                    priceChange = currentPrice - prevClose;
+                    priceChangePercent = (priceChange / prevClose) * 100;
+                }
+                const changeColor = priceChange >= 0 ? 'text-green-400' : 'text-red-400';
+                const card = document.createElement('div');
+                card.className = 'summary-card';
+                card.innerHTML = `<div class="flex justify-between items-center"><p class="font-bold text-lg">${holding.symbol}</p><p class="font-semibold text-lg">${currentPrice ? '$' + currentPrice.toFixed(2) : 'N/A'}</p></div><p class="text-sm text-gray-400 truncate">${holding.longName}</p><div class="text-right mt-2 ${changeColor}"><span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span><span>(${priceChangePercent.toFixed(2)}%)</span></div>`;
+                if (summaryList) summaryList.appendChild(card);
+            });
+        } catch (error) {
+            console.error("Error fetching portfolio summary:", error);
+            if (summaryList) summaryList.innerHTML = '<p class="text-red-400">Could not load live prices.</p>';
+        }
+    }
+
+    function toggleRealPurchaseInputs() {
+        document.getElementById('realPurchaseInputs').classList.toggle('hidden', !this.checked);
+    }
+
+    function togglePurchaseTypeInputs() {
+        const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
+        document.getElementById('quantityInputs').classList.toggle('hidden', purchaseType !== 'quantity');
+        document.getElementById('valueInputs').classList.toggle('hidden', purchaseType === 'quantity');
+    }
+
+    async function addStockToPortfolio() {
+        if (!currentStockData) return;
+        const isReal = document.getElementById('isRealCheckbox').checked;
+        const newHolding = { symbol: currentStockData.symbol, longName: currentStockData.longName, isReal: isReal };
+        if (isReal) {
+            const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
+            newHolding.purchaseType = purchaseType;
+            newHolding.date = document.getElementById('purchaseDate').value;
+            if (purchaseType === 'quantity') {
+                newHolding.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
+                newHolding.price = parseFloat(document.getElementById('purchasePrice').value);
+                if (isNaN(newHolding.quantity) || isNaN(newHolding.price) || !newHolding.date) { alert("Please fill in all details for a quantity-based holding."); return; }
+                newHolding.dollarValue = newHolding.quantity * newHolding.price;
+            } else {
+                newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
+                if (isNaN(newHolding.dollarValue) || !newHolding.date) { alert("Please fill in dollar value and date for a value-based holding."); return; }
+            }
+        }
+        if (portfolio.find(item => item.symbol === newHolding.symbol)) { alert(`${newHolding.symbol} is already in your portfolio.`); return; }
+        const response = await fetch('/api/portfolio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newHolding) });
+        if (response.ok) {
+            const addedHolding = await response.json();
+            portfolio.push(addedHolding);
+            renderAllPortfolioViews();
+            renderPortfolioChart();
+            document.getElementById('isRealCheckbox').checked = false;
+            document.getElementById('realPurchaseInputs').classList.add('hidden');
+        } else {
+            alert("Failed to add holding to the database.");
+        }
+    }
+
+    async function removePortfolioItem(event) {
+        const holdingId = event.target.dataset.id;
+        const response = await fetch(`/api/portfolio/${holdingId}`, { method: 'DELETE' });
+        if (response.ok) {
+            portfolio = portfolio.filter(p => p.id != holdingId);
+            renderAllPortfolioViews();
+            renderPortfolioChart();
+        } else {
+            alert("Failed to remove holding.");
+        }
+    }
+
+    // --- All other functions (charting, etc.) remain the same ---
+    // ...
     // --- INDIVIDUAL STOCK CHART ---
     function setupIndividualStockChart(historicalData) {
         if (stockChart) stockChart.destroy();
@@ -158,110 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mainChart.update('none');
         document.getElementById('dateRangeDisplay').textContent = `${slicedLabels[0]} to ${slicedLabels[slicedLabels.length - 1]}`;
     }
-
-    // --- DATABASE-DRIVEN PORTFOLIO MANAGEMENT ---
-    async function fetchPortfolio() {
-        const response = await fetch('/api/portfolio');
-        portfolio = await response.json();
-    }
-
-    function toggleRealPurchaseInputs() {
-        document.getElementById('realPurchaseInputs').classList.toggle('hidden', !this.checked);
-    }
-
-    function togglePurchaseTypeInputs() {
-        const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
-        document.getElementById('quantityInputs').classList.toggle('hidden', purchaseType !== 'quantity');
-        document.getElementById('valueInputs').classList.toggle('hidden', purchaseType === 'quantity');
-    }
-
-    async function addStockToPortfolio() {
-        if (!currentStockData) return;
-        const isReal = document.getElementById('isRealCheckbox').checked;
-        const newHolding = {
-            symbol: currentStockData.symbol,
-            longName: currentStockData.longName,
-            isReal: isReal
-        };
-
-        if (isReal) {
-            const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
-            newHolding.purchaseType = purchaseType;
-            newHolding.date = document.getElementById('purchaseDate').value;
-            if (purchaseType === 'quantity') {
-                newHolding.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
-                newHolding.price = parseFloat(document.getElementById('purchasePrice').value);
-                if (isNaN(newHolding.quantity) || isNaN(newHolding.price) || !newHolding.date) {
-                    alert("Please fill in all details for a quantity-based holding."); return;
-                }
-                newHolding.dollarValue = newHolding.quantity * newHolding.price;
-            } else {
-                newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
-                if (isNaN(newHolding.dollarValue) || !newHolding.date) {
-                    alert("Please fill in dollar value and date for a value-based holding."); return;
-                }
-            }
-        }
-
-        if (portfolio.find(item => item.symbol === newHolding.symbol)) {
-            alert(`${newHolding.symbol} is already in your portfolio.`); return;
-        }
-
-        const response = await fetch('/api/portfolio', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newHolding)
-        });
-
-        if (response.ok) {
-            const addedHolding = await response.json();
-            portfolio.push(addedHolding);
-            renderPortfolioList();
-            renderPortfolioChart();
-            document.getElementById('isRealCheckbox').checked = false;
-            document.getElementById('realPurchaseInputs').classList.add('hidden');
-        } else {
-            alert("Failed to add holding to the database.");
-        }
-    }
-
-    function renderPortfolioList() {
-        const listEl = document.getElementById('portfolioList');
-        listEl.innerHTML = '';
-        document.getElementById('emptyPortfolioMsg').classList.toggle('hidden', portfolio.length > 0);
-        portfolio.forEach(item => {
-            const itemDiv = document.createElement('div');
-            itemDiv.className = 'portfolio-item';
-            let details;
-            if (item.isReal) {
-                details = item.purchaseType === 'quantity'
-                    ? `(${item.quantity} shares @ $${item.price.toFixed(2)})`
-                    : `($${item.dollarValue.toLocaleString()} invested)`;
-            } else {
-                details = '(Tracking)';
-            }
-            itemDiv.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <div><p class="font-bold">${item.symbol}</p><p class="text-sm text-gray-400">${item.longName}</p></div>
-                    <div class="text-right"><p class="font-semibold">${details}</p><button class="remove-btn" data-id="${item.id}">Remove</button></div>
-                </div>`;
-            listEl.appendChild(itemDiv);
-        });
-        document.querySelectorAll('.remove-btn').forEach(btn => btn.addEventListener('click', removePortfolioItem));
-    }
-
-    async function removePortfolioItem(event) {
-        const holdingId = event.target.dataset.id;
-        const response = await fetch(`/api/portfolio/${holdingId}`, { method: 'DELETE' });
-        if (response.ok) {
-            portfolio = portfolio.filter(p => p.id != holdingId);
-            renderPortfolioList();
-            renderPortfolioChart();
-        } else {
-            alert("Failed to remove holding.");
-        }
-    }
-
+    
     // --- PORTFOLIO CHART & ANALYSIS ---
     async function renderPortfolioChart() {
         const realHoldings = portfolio.filter(p => p.isReal);
@@ -273,7 +300,8 @@ document.addEventListener('DOMContentLoaded', () => {
             holdingsForCalc = trackingHoldings; isWeighted = false;
         } else {
             if (portfolioChart) portfolioChart.destroy();
-            document.getElementById('portfolioTotalReturn').textContent = '';
+            const returnEl = document.getElementById('portfolioTotalReturn');
+            if(returnEl) returnEl.textContent = '';
             return;
         }
         const tickers = holdingsForCalc.map(p => p.symbol);
