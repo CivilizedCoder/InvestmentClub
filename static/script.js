@@ -45,6 +45,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         content.classList.add('active-content');
                     }
                 });
+
+                // FIX: When user clicks the "Stock Search" tab, reset the view
+                // to show the home dashboard and hide the detailed stock view.
+                if (tab === 'search') {
+                    document.getElementById('homeDashboard').classList.remove('hidden');
+                    document.getElementById('stockDataView').classList.add('hidden');
+                }
+
                 if (tab === 'portfolio' && portfolio.length > 0) {
                     renderPortfolioChart();
                 }
@@ -290,55 +298,86 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- PORTFOLIO CHART & ANALYSIS ---
+    // FIX: Wrapped the entire function in a try...catch block to handle API errors gracefully.
     async function renderPortfolioChart() {
-        const realHoldings = portfolio.filter(p => p.isReal);
-        const trackingHoldings = portfolio.filter(p => !p.isReal);
-        let holdingsForCalc, isWeighted;
-        if (realHoldings.length > 0) {
-            holdingsForCalc = realHoldings; isWeighted = true;
-        } else if (trackingHoldings.length > 0) {
-            holdingsForCalc = trackingHoldings; isWeighted = false;
-        } else {
-            if (portfolioChart) portfolioChart.destroy();
-            const returnEl = document.getElementById('portfolioTotalReturn');
-            if(returnEl) returnEl.textContent = '';
-            return;
-        }
-        const tickers = holdingsForCalc.map(p => p.symbol);
-        const response = await fetch('/api/portfolio_data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tickers })
-        });
-        const data = await response.json();
-        const dates = Object.keys(data);
-        const normalizedData = {};
-        tickers.forEach(ticker => {
-            const firstPrice = data[dates[0]][ticker];
-            normalizedData[ticker] = dates.map(date => ((data[date][ticker] - firstPrice) / firstPrice) * 100);
-        });
-        let portfolioPerformance;
-        if (isWeighted) {
-            const totalInvestment = holdingsForCalc.reduce((sum, h) => sum + h.dollarValue, 0);
-            const weights = {};
-            holdingsForCalc.forEach(h => { weights[h.symbol] = h.dollarValue / totalInvestment; });
-            portfolioPerformance = dates.map((_, i) => {
-                let weightedSum = 0;
-                holdingsForCalc.forEach(h => { weightedSum += normalizedData[h.symbol][i] * weights[h.symbol]; });
-                return weightedSum;
-            });
-        } else {
-            portfolioPerformance = dates.map((_, i) => {
-                let sum = 0;
-                holdingsForCalc.forEach(h => sum += normalizedData[h.symbol][i]);
-                return sum / holdingsForCalc.length;
-            });
-        }
-        if (portfolioChart) portfolioChart.destroy();
         const portfolioCtx = document.getElementById('portfolioChart').getContext('2d');
-        portfolioChart = new Chart(portfolioCtx, createChartConfig('Portfolio Performance (%)'));
-        portfolioChart.allData = { labels: dates, data: portfolioPerformance };
-        handleTimeframeChange({ target: document.querySelector('.timeframe-btn.active') });
+        const returnEl = document.getElementById('portfolioTotalReturn');
+        const chartContainer = portfolioCtx.parentElement;
+
+        try {
+            const realHoldings = portfolio.filter(p => p.isReal);
+            const trackingHoldings = portfolio.filter(p => !p.isReal);
+            let holdingsForCalc, isWeighted;
+
+            if (realHoldings.length > 0) {
+                holdingsForCalc = realHoldings; isWeighted = true;
+            } else if (trackingHoldings.length > 0) {
+                holdingsForCalc = trackingHoldings; isWeighted = false;
+            } else {
+                if (portfolioChart) portfolioChart.destroy();
+                if(returnEl) returnEl.textContent = 'No holdings to display.';
+                return;
+            }
+
+            const tickers = holdingsForCalc.map(p => p.symbol);
+            const response = await fetch('/api/portfolio_data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tickers })
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({ error: 'Failed to fetch portfolio data' }));
+                throw new Error(err.error);
+            }
+            
+            const data = await response.json();
+            const dates = Object.keys(data);
+            if (dates.length === 0) throw new Error("No historical data returned for portfolio.");
+
+            const normalizedData = {};
+            tickers.forEach(ticker => {
+                if(data[dates[0]][ticker]) {
+                    const firstPrice = data[dates[0]][ticker];
+                    normalizedData[ticker] = dates.map(date => ((data[date][ticker] - firstPrice) / firstPrice) * 100);
+                }
+            });
+
+            let portfolioPerformance;
+            if (isWeighted) {
+                const totalInvestment = holdingsForCalc.reduce((sum, h) => sum + h.dollarValue, 0);
+                const weights = {};
+                holdingsForCalc.forEach(h => { weights[h.symbol] = h.dollarValue / totalInvestment; });
+                portfolioPerformance = dates.map((_, i) => {
+                    let weightedSum = 0;
+                    holdingsForCalc.forEach(h => { 
+                        if (normalizedData[h.symbol]) weightedSum += normalizedData[h.symbol][i] * weights[h.symbol]; 
+                    });
+                    return weightedSum;
+                });
+            } else {
+                portfolioPerformance = dates.map((_, i) => {
+                    let sum = 0, count = 0;
+                    holdingsForCalc.forEach(h => {
+                        if(normalizedData[h.symbol]) { sum += normalizedData[h.symbol][i]; count++; }
+                    });
+                    return count > 0 ? sum / count : 0;
+                });
+            }
+            if (portfolioChart) portfolioChart.destroy();
+            // Restore canvas if it was replaced by an error message
+            if (chartContainer.querySelector('canvas') === null) {
+                chartContainer.innerHTML = '<canvas id="portfolioChart"></canvas>';
+            }
+            const newCtx = document.getElementById('portfolioChart').getContext('2d');
+            portfolioChart = new Chart(newCtx, createChartConfig('Portfolio Performance (%)'));
+            portfolioChart.allData = { labels: dates, data: portfolioPerformance };
+            handleTimeframeChange({ target: document.querySelector('.timeframe-btn.active') });
+        } catch (error) {
+            console.error("Error rendering portfolio chart:", error);
+            if (portfolioChart) portfolioChart.destroy();
+            chartContainer.innerHTML = `<div class="text-red-400 text-center mt-10"><p class="font-bold">Error</p><p>${error.message}</p></div>`;
+            if(returnEl) returnEl.textContent = '-';
+        }
     }
 
     function handleTimeframeChange(event) {
