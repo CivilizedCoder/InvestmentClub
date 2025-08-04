@@ -82,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.querySelectorAll('[data-role]').forEach(el => {
             const requiredLevel = roles[el.dataset.role];
-            el.style.display = userLevel >= requiredLevel ? '' : 'flex'; // Use flex for sidebar items
+            el.style.display = userLevel >= requiredLevel ? 'flex' : 'none';
         });
 
         const userInfoEl = document.getElementById('userInfo');
@@ -285,8 +285,23 @@ document.addEventListener('DOMContentLoaded', () => {
         portfolio.forEach(item => {
             const row = document.createElement('tr');
             row.className = 'border-b border-gray-800 hover:bg-gray-800';
-            const purchaseDetail = item.purchaseType === 'quantity' ? `${item.quantity.toFixed(4)} shares` : `$${item.dollarValue.toFixed(2)}`;
-            row.innerHTML = `<td class="p-3">${item.date}</td><td class="p-3 font-bold">${item.symbol}</td><td class="p-3">${item.longName}</td><td class="p-3">${item.isReal ? 'Buy' : 'Track'}</td><td class="p-3 text-right">${purchaseDetail}</td><td class="p-3 text-right">$${item.price.toFixed(2)}</td><td class="p-3 text-right font-semibold">$${item.dollarValue.toFixed(2)}</td>`;
+            
+            // FIX: Handle potential null values for tracked stocks or incomplete data
+            const quantityText = item.quantity ? `${item.quantity.toFixed(4)} shares` : 'N/A';
+            const dollarValueText = item.dollarValue ? `$${item.dollarValue.toFixed(2)}` : 'N/A';
+            const priceText = item.price ? `$${item.price.toFixed(2)}` : 'N/A';
+            
+            const purchaseDetail = item.purchaseType === 'quantity' ? quantityText : (item.purchaseType === 'value' ? dollarValueText : 'N/A');
+
+            row.innerHTML = `
+                <td class="p-3">${item.date || 'N/A'}</td>
+                <td class="p-3 font-bold">${item.symbol}</td>
+                <td class="p-3">${item.longName}</td>
+                <td class="p-3">${item.isReal ? 'Buy' : 'Track'}</td>
+                <td class="p-3 text-right">${purchaseDetail}</td>
+                <td class="p-3 text-right">${priceText}</td>
+                <td class="p-3 text-right font-semibold">${dollarValueText}</td>
+            `;
             listEl.appendChild(row);
         });
     }
