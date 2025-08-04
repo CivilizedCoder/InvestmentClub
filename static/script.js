@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeTabs();
         initializeEventListeners();
         await fetchPortfolio(); // Fetch data from the database on load
-        renderAllPortfolioViews(); // NEW: Single function to render all portfolio elements
+        renderAllPortfolioViews(); // Single function to render all portfolio elements
         if (portfolio.length > 0) {
             renderPortfolioChart();
         }
@@ -22,8 +22,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializeEventListeners() {
         document.getElementById('fetchBtn').addEventListener('click', fetchStockData);
         document.getElementById('tickerInput').addEventListener('keypress', e => e.key === 'Enter' && fetchStockData());
-        document.getElementById('isRealCheckbox').addEventListener('change', toggleRealPurchaseInputs);
-        document.getElementById('addToPortfolioBtn').addEventListener('click', addStockToPortfolio);
+        
+        // These elements only exist on the Home tab, so check for them before adding listeners
+        const isRealCheckbox = document.getElementById('isRealCheckbox');
+        if (isRealCheckbox) isRealCheckbox.addEventListener('change', toggleRealPurchaseInputs);
+        
+        const addToPortfolioBtn = document.getElementById('addToPortfolioBtn');
+        if(addToPortfolioBtn) addToPortfolioBtn.addEventListener('click', addStockToPortfolio);
+
         document.querySelectorAll('.timeframe-btn').forEach(btn => btn.addEventListener('click', handleTimeframeChange));
         document.querySelectorAll('input[name="purchaseType"]').forEach(radio => {
             radio.addEventListener('change', togglePurchaseTypeInputs);
@@ -32,25 +38,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- TAB HANDLING ---
     function initializeTabs() {
-        const tabButtons = document.querySelectorAll('.tab-btn');
+        const navLinks = document.querySelectorAll('.nav-link');
         const tabContents = document.querySelectorAll('.tab-content');
-        tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const tab = button.dataset.tab;
-                tabButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
+
+        navLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault(); // Prevent default anchor behavior
+                const tab = link.dataset.tab;
+
+                navLinks.forEach(lnk => lnk.classList.remove('active'));
+                link.classList.add('active');
+
                 tabContents.forEach(content => {
+                    // Use a class to hide instead of the 'hidden' attribute for smoother transitions
                     content.classList.remove('active-content');
+                    content.classList.add('hidden');
                     if (content.id === `${tab}Content`) {
+                        content.classList.remove('hidden');
                         content.classList.add('active-content');
                     }
                 });
 
-                // FIX: When user clicks the "Stock Search" tab, reset the view
-                // to show the home dashboard and hide the detailed stock view.
-                if (tab === 'search') {
-                    document.getElementById('homeDashboard').classList.remove('hidden');
-                    document.getElementById('stockDataView').classList.add('hidden');
+                // When user clicks the "Home" tab, reset the view
+                if (tab === 'home') {
+                    const homeDashboard = document.getElementById('homeDashboard');
+                    const stockDataView = document.getElementById('stockDataView');
+                    if(homeDashboard) homeDashboard.classList.remove('hidden');
+                    if(stockDataView) stockDataView.classList.add('hidden');
                 }
 
                 if (tab === 'portfolio' && portfolio.length > 0) {
@@ -64,27 +78,44 @@ document.addEventListener('DOMContentLoaded', () => {
     function fetchStockData() {
         const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
         if (!ticker) return;
-        document.getElementById('homeDashboard').innerHTML = '<p class="text-center">Loading...</p>';
-        document.getElementById('stockDataView').classList.add('hidden');
+        
+        const homeDashboard = document.getElementById('homeDashboard');
+        const stockDataView = document.getElementById('stockDataView');
+        if (homeDashboard) homeDashboard.innerHTML = '<p class="text-center card">Loading...</p>';
+        if (stockDataView) stockDataView.classList.add('hidden');
+
         fetch(`/api/stock/${ticker}`)
             .then(response => response.ok ? response.json() : response.json().then(err => { throw new Error(err.error) }))
             .then(data => {
                 currentStockData = data;
-                document.getElementById('homeDashboard').classList.add('hidden'); // Hide summary/welcome
-                document.getElementById('stockDataView').classList.remove('hidden'); // Show stock details
+                if (homeDashboard) homeDashboard.classList.add('hidden');
+                
+                // Inject the detailed stock view HTML if it doesn't exist
+                if (stockDataView && stockDataView.innerHTML.trim() === '') {
+                    stockDataView.innerHTML = getStockDataViewHtml();
+                    // Re-initialize listeners for the newly added elements
+                    initializeEventListeners(); 
+                }
+                
+                if (stockDataView) stockDataView.classList.remove('hidden');
+                
                 updateStockInfoUI(data);
                 setupIndividualStockChart(data.historical);
-                document.getElementById('portfolioTicker').textContent = data.symbol;
+                const portfolioTicker = document.getElementById('portfolioTicker');
+                if (portfolioTicker) portfolioTicker.textContent = data.symbol;
             })
             .catch(error => {
-                document.getElementById('homeDashboard').innerHTML = `<p class="text-red-400 text-center">Error: ${error.message}</p>`;
-                document.getElementById('homeDashboard').classList.remove('hidden');
+                if (homeDashboard) {
+                    homeDashboard.innerHTML = `<p class="text-red-400 text-center card">Error: ${error.message}</p>`;
+                    homeDashboard.classList.remove('hidden');
+                }
             });
     }
 
     function updateStockInfoUI(data) {
         const formatCurrency = (val) => val ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
         const formatLargeNumber = (val) => val ? Number(val).toLocaleString() : 'N/A';
+        
         document.getElementById('stockName').textContent = data.longName || 'N/A';
         document.getElementById('stockSymbol').textContent = data.symbol || 'N/A';
         document.getElementById('currentPrice').textContent = formatCurrency(data.currentPrice);
@@ -109,7 +140,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // NEW: Unified function to render all portfolio views safely
     async function renderAllPortfolioViews() {
         // Render the main list on the Portfolio tab
         const listEl = document.getElementById('portfolioList');
@@ -173,13 +203,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function toggleRealPurchaseInputs() {
-        document.getElementById('realPurchaseInputs').classList.toggle('hidden', !this.checked);
+        const realPurchaseInputs = document.getElementById('realPurchaseInputs');
+        if (realPurchaseInputs) realPurchaseInputs.classList.toggle('hidden', !this.checked);
     }
 
     function togglePurchaseTypeInputs() {
         const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
-        document.getElementById('quantityInputs').classList.toggle('hidden', purchaseType !== 'quantity');
-        document.getElementById('valueInputs').classList.toggle('hidden', purchaseType === 'quantity');
+        const quantityInputs = document.getElementById('quantityInputs');
+        const valueInputs = document.getElementById('valueInputs');
+        if (quantityInputs) quantityInputs.classList.toggle('hidden', purchaseType !== 'quantity');
+        if (valueInputs) valueInputs.classList.toggle('hidden', purchaseType === 'quantity');
     }
 
     async function addStockToPortfolio() {
@@ -205,10 +238,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (response.ok) {
             const addedHolding = await response.json();
             portfolio.push(addedHolding);
-            renderAllPortfolioViews();
+            await renderAllPortfolioViews();
             renderPortfolioChart();
-            document.getElementById('isRealCheckbox').checked = false;
-            document.getElementById('realPurchaseInputs').classList.add('hidden');
+            alert(`${newHolding.symbol} has been added to your portfolio.`);
         } else {
             alert("Failed to add holding to the database.");
         }
@@ -219,16 +251,64 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await fetch(`/api/portfolio/${holdingId}`, { method: 'DELETE' });
         if (response.ok) {
             portfolio = portfolio.filter(p => p.id != holdingId);
-            renderAllPortfolioViews();
+            await renderAllPortfolioViews();
             renderPortfolioChart();
         } else {
             alert("Failed to remove holding.");
         }
     }
 
-    // --- All other functions (charting, etc.) remain the same ---
-    // ...
-    // --- INDIVIDUAL STOCK CHART ---
+    // --- CHARTING & UI TEMPLATES ---
+    function getStockDataViewHtml() {
+        return `
+            <div class="card mb-6">
+                <div class="flex justify-between items-center">
+                    <div><h2 id="stockName" class="text-3xl font-bold"></h2><p id="stockSymbol" class="text-lg text-gray-400"></p></div>
+                    <div class="text-right"><p id="currentPrice" class="text-4xl font-bold"></p></div>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 card">
+                    <div id="dateRangeDisplay" class="text-center text-gray-400 font-medium mb-4"></div>
+                    <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
+                    <div class="mt-8">
+                        <p class="text-center text-sm text-gray-500 mb-2">Timeline Navigator</p>
+                        <div id="timelineContainer" style="height: 100px;"><canvas id="timelineChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="card space-y-4">
+                    <h3 class="text-xl font-bold mb-2">Key Statistics</h3>
+                    <div class="kpi-grid">
+                        <div><p class="kpi-label">Day High</p><p id="dayHigh" class="kpi-value"></p></div>
+                        <div><p class="kpi-label">Day Low</p><p id="dayLow" class="kpi-value"></p></div>
+                        <div><p class="kpi-label">52-Wk High</p><p id="fiftyTwoWeekHigh" class="kpi-value"></p></div>
+                        <div><p class="kpi-label">52-Wk Low</p><p id="fiftyTwoWeekLow" class="kpi-value"></p></div>
+                        <div><p class="kpi-label">Market Cap</p><p id="marketCap" class="kpi-value"></p></div>
+                        <div><p class="kpi-label">Volume</p><p id="volume" class="kpi-value"></p></div>
+                        <div><p class="kpi-label">P/E Ratio</p><p id="forwardPE" class="kpi-value"></p></div>
+                    </div>
+                    <div id="addToPortfolioSection" class="pt-4 border-t border-gray-700">
+                        <h4 class="font-semibold mb-2">Add <span id="portfolioTicker"></span> to Portfolio</h4>
+                        <div class="flex items-center mb-3">
+                            <input id="isRealCheckbox" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-cyan-600 focus:ring-cyan-500 bg-gray-700">
+                            <label for="isRealCheckbox" class="ml-2 block text-sm text-gray-300">This is a real holding</label>
+                        </div>
+                        <div id="realPurchaseInputs" class="space-y-3 hidden">
+                            <div class="flex items-center space-x-4 mb-2">
+                                <label class="flex items-center text-sm cursor-pointer"><input type="radio" name="purchaseType" value="quantity" class="form-radio" checked><span class="ml-2">By Quantity</span></label>
+                                <label class="flex items-center text-sm cursor-pointer"><input type="radio" name="purchaseType" value="value" class="form-radio"><span class="ml-2">By Value</span></label>
+                            </div>
+                            <div id="quantityInputs" class="space-y-3"><input type="number" id="purchaseQuantity" placeholder="Quantity (e.g., 10)" class="form-input"><input type="number" id="purchasePrice" placeholder="Price per Share" class="form-input"></div>
+                            <div id="valueInputs" class="space-y-3 hidden"><input type="number" id="purchaseValue" placeholder="Total Dollar Value (e.g., 500)" class="form-input"></div>
+                            <input type="date" id="purchaseDate" class="form-input mt-3">
+                        </div>
+                        <button id="addToPortfolioBtn" class="button-success w-full mt-3">Add to Portfolio</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     function setupIndividualStockChart(historicalData) {
         if (stockChart) stockChart.destroy();
         if (timelineChart) timelineChart.destroy();
@@ -244,6 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addTimelineInteraction(canvas, timeline, mainChart, data) {
+        // ... (unchanged)
         let isDragging = false, isResizingStart = false, isResizingEnd = false;
         let dragStartX = 0, initialStartIndex = 0, initialEndIndex = 0;
         const getIndexFromX = (x) => {
@@ -288,6 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateMainChart(timeline, mainChart) {
+        // ... (unchanged)
         const { startIndex, endIndex } = timeline.options.plugins.brush;
         const slicedData = timeline.data.datasets[0].data.slice(startIndex, endIndex + 1);
         const slicedLabels = timeline.data.labels.slice(startIndex, endIndex + 1);
@@ -297,11 +379,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('dateRangeDisplay').textContent = `${slicedLabels[0]} to ${slicedLabels[slicedLabels.length - 1]}`;
     }
     
-    // --- PORTFOLIO CHART & ANALYSIS ---
-    // FIX: Wrapped the entire function in a try...catch block to handle API errors gracefully.
     async function renderPortfolioChart() {
-        const portfolioCtx = document.getElementById('portfolioChart').getContext('2d');
+        // ... (unchanged, but wrapped in try/catch)
+        const portfolioCtx = document.getElementById('portfolioChart')?.getContext('2d');
         const returnEl = document.getElementById('portfolioTotalReturn');
+        if (!portfolioCtx) return; // Don't run if not on portfolio page
         const chartContainer = portfolioCtx.parentElement;
 
         try {
@@ -364,7 +446,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
             if (portfolioChart) portfolioChart.destroy();
-            // Restore canvas if it was replaced by an error message
             if (chartContainer.querySelector('canvas') === null) {
                 chartContainer.innerHTML = '<canvas id="portfolioChart"></canvas>';
             }
@@ -381,6 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleTimeframeChange(event) {
+        // ... (unchanged)
         const button = event.target;
         document.querySelectorAll('.timeframe-btn').forEach(btn => btn.classList.remove('active'));
         button.classList.add('active');
@@ -403,8 +485,8 @@ document.addEventListener('DOMContentLoaded', () => {
         returnEl.style.color = totalReturn >= 0 ? '#34D399' : '#F87171';
     }
 
-    // --- CHARTING UTILITIES ---
     function createChartConfig(label) {
+        // ... (unchanged)
         return {
             type: 'line',
             data: { labels: [], datasets: [{ label: label, data: [], borderColor: '#22D3EE', backgroundColor: 'rgba(34, 211, 238, 0.1)', fill: true, tension: 0.2, pointRadius: 0 }] },
@@ -420,14 +502,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createTimelineConfig(stockData) {
+        // ... (unchanged)
         const brushPlugin = {
             id: 'brush',
             afterDraw: (chart) => {
                 const { ctx, chartArea: { left, top, right, bottom } } = chart;
                 if (!chart.getDatasetMeta(0).data.length) return;
                 const { startIndex, endIndex } = chart.options.plugins.brush;
-                const startX = chart.getDatasetMeta(0).data[startIndex].x;
-                const endX = chart.getDatasetMeta(0).data[endIndex].x;
+                const startX = meta.data[startIndex].x;
+                const endX = meta.data[endIndex].x;
                 ctx.save();
                 ctx.fillStyle = 'rgba(100, 116, 139, 0.3)';
                 ctx.fillRect(left, top, startX - left, bottom - top);
