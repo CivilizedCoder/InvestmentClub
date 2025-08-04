@@ -5,7 +5,6 @@ import yfinance as yf
 import os
 
 # Initialize the SQLAlchemy database extension WITHOUT an app instance.
-# This is a more robust pattern.
 db = SQLAlchemy()
 
 # Initialize the Flask application
@@ -17,66 +16,62 @@ app = Flask(__name__,
 # Render provides the database URL via an environment variable.
 database_url = os.environ.get('DATABASE_URL')
 
-# FIX 1: Replace 'postgres://' with 'postgresql://' for SQLAlchemy compatibility
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
+if database_url:
+    # Replace 'postgres://' with 'postgresql://' for SQLAlchemy compatibility
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    
+    # Ensure sslmode=require is present. This is critical for Render databases.
+    if '?' in database_url:
+        if 'sslmode' not in database_url:
+            database_url += '&sslmode=require'
+    else:
+        database_url += '?sslmode=require'
 
-# We are telling SQLAlchemy where to find our database.
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# FINAL FIX: Explicitly set SSL mode in engine options for a robust connection.
-# This is a more reliable method than modifying the URL string.
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'connect_args': {
-        'sslmode': 'require'
-    }
-}
 
 # Now, associate the database with the app instance.
 db.init_app(app)
 
 # --- DATABASE MODEL ---
-# This class defines the structure of our 'holdings' table in the database.
 class Holding(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     symbol = db.Column(db.String(10), nullable=False)
     long_name = db.Column(db.String(100), nullable=False)
     is_real = db.Column(db.Boolean, nullable=False)
-    purchase_type = db.Column(db.String(20)) # 'quantity' or 'value'
+    purchase_type = db.Column(db.String(20))
     quantity = db.Column(db.Float)
     price = db.Column(db.Float)
     dollar_value = db.Column(db.Float)
     date = db.Column(db.String(20))
 
     def to_dict(self):
-        """Converts the Holding object to a dictionary for easy JSON serialization."""
         return {
-            'id': self.id,
-            'symbol': self.symbol,
-            'longName': self.long_name,
-            'isReal': self.is_real,
-            'purchaseType': self.purchase_type,
-            'quantity': self.quantity,
-            'price': self.price,
-            'dollarValue': self.dollar_value,
-            'date': self.date
+            'id': self.id, 'symbol': self.symbol, 'longName': self.long_name,
+            'isReal': self.is_real, 'purchaseType': self.purchase_type,
+            'quantity': self.quantity, 'price': self.price,
+            'dollarValue': self.dollar_value, 'date': self.date
         }
 
-# Create the database table if it doesn't exist
+# Create the database table within the application context
 with app.app_context():
     db.create_all()
+
+# NEW: Teardown function to ensure database sessions are closed after each request.
+# This prevents stale connections from causing SSL errors.
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db.session.remove()
 
 # --- HTML & API ROUTES ---
 
 @app.route('/')
 def index():
-    """Serves the main index.html page."""
     return render_template('index.html')
 
 @app.route('/api/stock/<ticker_symbol>')
 def get_stock_data(ticker_symbol):
-    """Fetches detailed statistics for a single stock ticker."""
     try:
         stock = yf.Ticker(ticker_symbol)
         info = stock.info
@@ -98,7 +93,6 @@ def get_stock_data(ticker_symbol):
 
 @app.route('/api/portfolio_data', methods=['POST'])
 def get_portfolio_data():
-    """Fetches historical price data for a list of tickers."""
     try:
         data = request.get_json()
         tickers = data.get('tickers')
@@ -113,17 +107,15 @@ def get_portfolio_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# --- NEW DATABASE API ENDPOINTS ---
+# --- DATABASE API ENDPOINTS ---
 
 @app.route('/api/portfolio', methods=['GET'])
 def get_holdings():
-    """Fetches all portfolio holdings from the database."""
     holdings = Holding.query.all()
     return jsonify([h.to_dict() for h in holdings])
 
 @app.route('/api/portfolio', methods=['POST'])
 def add_holding():
-    """Adds a new holding to the database."""
     data = request.get_json()
     new_holding = Holding(
         symbol=data['symbol'], long_name=data['longName'], is_real=data['isReal'],
@@ -136,7 +128,6 @@ def add_holding():
 
 @app.route('/api/portfolio/<int:holding_id>', methods=['DELETE'])
 def delete_holding(holding_id):
-    """Deletes a holding from the database by its ID."""
     holding = Holding.query.get(holding_id)
     if holding is None:
         return jsonify({"error": "Holding not found"}), 404
@@ -144,6 +135,5 @@ def delete_holding(holding_id):
     db.session.commit()
     return jsonify({"message": "Holding deleted successfully"})
 
-# This part is for local testing and will not be used on Render
 if __name__ == '__main__':
     app.run(debug=True)
