@@ -31,6 +31,12 @@ if database_url:
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# NEW: Add engine options to enable connection pooling pre-ping.
+# This helps prevent errors from stale connections in the pool.
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True
+}
+
 # Now, associate the database with the app instance.
 db.init_app(app)
 
@@ -58,8 +64,7 @@ class Holding(db.Model):
 with app.app_context():
     db.create_all()
 
-# NEW: Teardown function to ensure database sessions are closed after each request.
-# This prevents stale connections from causing SSL errors.
+# Teardown function to ensure database sessions are closed after each request.
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db.session.remove()
