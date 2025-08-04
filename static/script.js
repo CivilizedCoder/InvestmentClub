@@ -24,15 +24,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 const tab = link.dataset.tab;
 
+                // Deactivate all nav links and tab content
                 document.querySelectorAll('.nav-link').forEach(lnk => lnk.classList.remove('active'));
-                link.classList.add('active');
-
                 document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.add('hidden');
-                    if (content.id === `${tab}Content`) content.classList.remove('hidden');
+                    content.classList.remove('active-content');
                 });
+
+                // Activate the target nav link and tab content
+                link.classList.add('active');
+                const targetContent = document.getElementById(`${tab}Content`);
+                if (targetContent) {
+                    targetContent.classList.add('active-content');
+                }
                 
-                // Render content when a tab is clicked
+                // Render dynamic content for the newly active tab
                 switch (tab) {
                     case 'home':
                         // Reset home view
@@ -235,59 +240,137 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function renderPortfolioDashboard() {
-        const realHoldings = portfolio.filter(p => p.isReal);
-        if (realHoldings.length === 0) {
-            document.getElementById('sectorBreakdown').innerHTML = '<p class="card text-center text-gray-500">No real holdings to analyze.</p>';
-            document.getElementById('portfolioTotalValue').textContent = '$0.00';
-            document.getElementById('portfolioTotalCost').textContent = '$0.00';
-            document.getElementById('portfolioTotalEarnings').textContent = '$0.00';
-            return;
-        }
-        const tickers = [...new Set(realHoldings.map(p => p.symbol))];
-        const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
-        const quotes = await response.json();
-        let totalCurrentValue = 0, totalCost = 0;
-        const sectors = {};
-        realHoldings.forEach(h => {
-            const quantity = h.quantity || 0;
-            const dollarValue = h.dollarValue || 0;
-            const currentPrice = quotes[h.symbol]?.currentPrice || h.price || 0;
-            const currentValue = quantity * currentPrice;
-            const sectorName = h.sector || 'Other';
-
-            if (!sectors[sectorName]) sectors[sectorName] = { holdings: [], totalCost: 0, currentValue: 0 };
-            
-            sectors[sectorName].holdings.push({ ...h, currentValue });
-            sectors[sectorName].totalCost += dollarValue;
-            sectors[sectorName].currentValue += currentValue;
-            
-            totalCurrentValue += currentValue;
-            totalCost += dollarValue;
-        });
-        const totalEarnings = totalCurrentValue - totalCost;
-        const earningsColor = totalEarnings >= 0 ? 'text-green-400' : 'text-red-400';
-        document.getElementById('portfolioTotalValue').textContent = `$${totalCurrentValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        document.getElementById('portfolioTotalCost').textContent = `$${totalCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        const earningsEl = document.getElementById('portfolioTotalEarnings');
-        earningsEl.textContent = `${totalEarnings >= 0 ? '+' : '-'}$${Math.abs(totalEarnings).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        earningsEl.className = `text-3xl font-bold mt-2 ${earningsColor}`;
         const breakdownEl = document.getElementById('sectorBreakdown');
-        breakdownEl.innerHTML = '';
-        Object.keys(sectors).sort().forEach(sectorName => {
-            const sector = sectors[sectorName];
-            const sectorEarnings = sector.currentValue - sector.totalCost;
-            const sectorEarningsColor = sectorEarnings >= 0 ? 'text-green-400' : 'text-red-400';
-            const sectorCard = document.createElement('div');
-            sectorCard.className = 'card';
-            sectorCard.innerHTML = `<h4 class="text-xl font-bold mb-4">${sectorName}</h4><div class="grid grid-cols-3 gap-4 mb-4 text-center"><div><p class="text-sm text-gray-400">Invested</p><p class="font-semibold">$${sector.totalCost.toFixed(2)}</p></div><div><p class="text-sm text-gray-400">Current Value</p><p class="font-semibold">$${sector.currentValue.toFixed(2)}</p></div><div><p class="text-sm text-gray-400">Earnings</p><p class="font-semibold ${sectorEarningsColor}">${sectorEarnings >= 0 ? '+' : '-'}$${Math.abs(sectorEarnings).toFixed(2)}</p></div></div><table class="w-full text-sm"><thead><tr class="border-b border-gray-700"><th class="p-2 text-left">Symbol</th><th class="p-2 text-right">Qty</th><th class="p-2 text-right">Cost</th><th class="p-2 text-right">Value</th></tr></thead><tbody>${sector.holdings.map(h => {
-                const quantityText = typeof h.quantity === 'number' ? h.quantity.toFixed(2) : '0.00';
-                const dollarValueText = typeof h.dollarValue === 'number' ? `$${h.dollarValue.toFixed(2)}` : '$0.00';
-                const currentValueText = typeof h.currentValue === 'number' ? `$${h.currentValue.toFixed(2)}` : '$0.00';
-                return `<tr class="border-b border-gray-800"><td class="p-2 font-bold">${h.symbol}</td><td class="p-2 text-right">${quantityText}</td><td class="p-2 text-right">${dollarValueText}</td><td class="p-2 text-right">${currentValueText}</td></tr>`;
-            }).join('')}</tbody></table>`;
-            breakdownEl.appendChild(sectorCard);
-        });
+        const totalValueEl = document.getElementById('portfolioTotalValue');
+        const totalCostEl = document.getElementById('portfolioTotalCost');
+        const totalEarningsEl = document.getElementById('portfolioTotalEarnings');
+    
+        try {
+            const realHoldings = portfolio.filter(p => p.isReal && p.quantity > 0);
+    
+            if (realHoldings.length === 0) {
+                breakdownEl.innerHTML = '<p class="card text-center text-gray-500">No real holdings to analyze.</p>';
+                totalValueEl.textContent = '$0.00';
+                totalCostEl.textContent = '$0.00';
+                totalEarningsEl.innerHTML = '$0.00';
+                totalEarningsEl.className = 'text-3xl font-bold mt-2'; // Reset color
+                return;
+            }
+    
+            breakdownEl.innerHTML = '<p class="card text-center">Loading live portfolio data...</p>';
+    
+            const tickers = [...new Set(realHoldings.map(p => p.symbol))];
+            const response = await fetch('/api/quotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tickers })
+            });
+    
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: "Failed to fetch quotes and parse error." }));
+                throw new Error(errorData.error || 'Failed to fetch quotes');
+            }
+    
+            const quotes = await response.json();
+            let totalCurrentValue = 0, totalCost = 0;
+            const sectors = {};
+    
+            realHoldings.forEach(h => {
+                const quantity = h.quantity || 0;
+                const dollarValue = h.dollarValue || 0;
+                const currentPrice = quotes[h.symbol]?.currentPrice ?? h.price ?? 0;
+                const currentValue = quantity * currentPrice;
+                const sectorName = h.sector || 'Other';
+    
+                if (!sectors[sectorName]) {
+                    sectors[sectorName] = { holdings: [], totalCost: 0, currentValue: 0 };
+                }
+    
+                sectors[sectorName].holdings.push({ ...h, currentValue });
+                sectors[sectorName].totalCost += dollarValue;
+                sectors[sectorName].currentValue += currentValue;
+    
+                totalCurrentValue += currentValue;
+                totalCost += dollarValue;
+            });
+    
+            const totalEarnings = totalCurrentValue - totalCost;
+            const totalEarningsPercent = totalCost > 0 ? (totalEarnings / totalCost) * 100 : 0;
+            const earningsColor = totalEarnings >= 0 ? 'text-green-400' : 'text-red-400';
+    
+            totalValueEl.textContent = `$${totalCurrentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            totalCostEl.textContent = `$${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            totalEarningsEl.innerHTML = `
+                ${totalEarnings >= 0 ? '+' : ''}$${Math.abs(totalEarnings).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <span class="text-lg font-semibold">(${totalEarningsPercent.toFixed(2)}%)</span>
+            `;
+            totalEarningsEl.className = `text-3xl font-bold mt-2 ${earningsColor}`;
+    
+            breakdownEl.innerHTML = '';
+            Object.keys(sectors).sort().forEach(sectorName => {
+                const sector = sectors[sectorName];
+                const sectorEarnings = sector.currentValue - sector.totalCost;
+                const sectorEarningsPercent = sector.totalCost > 0 ? (sectorEarnings / sector.totalCost) * 100 : 0;
+                const sectorEarningsColor = sectorEarnings >= 0 ? 'text-green-400' : 'text-red-400';
+    
+                const sectorCard = document.createElement('div');
+                sectorCard.className = 'card';
+                sectorCard.innerHTML = `
+                    <div class="flex justify-between items-start mb-4">
+                        <h4 class="text-xl font-bold">${sectorName}</h4>
+                        <div class="text-right">
+                            <p class="font-semibold text-lg ${sectorEarningsColor}">
+                                ${sectorEarnings >= 0 ? '+' : '-'}$${Math.abs(sectorEarnings).toFixed(2)}
+                            </p>
+                            <p class="text-sm ${sectorEarningsColor}">(${sectorEarningsPercent.toFixed(2)}%)</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mb-4 text-center">
+                        <div>
+                            <p class="text-sm text-gray-400">Total Invested</p>
+                            <p class="font-semibold">$${sector.totalCost.toFixed(2)}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-400">Current Value</p>
+                            <p class="font-semibold">$${sector.currentValue.toFixed(2)}</p>
+                        </div>
+                    </div>
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-700">
+                                <th class="p-2 text-left">Symbol</th>
+                                <th class="p-2 text-right">Shares</th>
+                                <th class="p-2 text-right">Cost Basis</th>
+                                <th class="p-2 text-right">Market Value</th>
+                                <th class="p-2 text-right">Gain/Loss</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sector.holdings.map(h => {
+                                const gainLoss = h.currentValue - h.dollarValue;
+                                const gainLossColor = gainLoss >= 0 ? 'text-green-400' : 'text-red-400';
+                                return `
+                                    <tr class="border-b border-gray-800 last:border-b-0">
+                                        <td class="p-2 font-bold">${h.symbol}</td>
+                                        <td class="p-2 text-right">${(h.quantity || 0).toFixed(2)}</td>
+                                        <td class="p-2 text-right">$${(h.dollarValue || 0).toFixed(2)}</td>
+                                        <td class="p-2 text-right">$${(h.currentValue || 0).toFixed(2)}</td>
+                                        <td class="p-2 text-right ${gainLossColor}">
+                                            ${gainLoss >= 0 ? '+' : '-'}$${Math.abs(gainLoss).toFixed(2)}
+                                        </td>
+                                    </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>`;
+                breakdownEl.appendChild(sectorCard);
+            });
+    
+        } catch (error) {
+            console.error("Error rendering portfolio dashboard:", error);
+            breakdownEl.innerHTML = `<p class="card text-red-400 text-center">Error: Could not load portfolio data. ${error.message}</p>`;
+        }
     }
+
 
     // --- EVENT HANDLERS ---
     async function handlePresentationSubmit(e) {
