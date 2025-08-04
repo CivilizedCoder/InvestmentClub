@@ -31,7 +31,7 @@ if database_url:
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# NEW: Add engine options to enable connection pooling pre-ping.
+# Add engine options to enable connection pooling pre-ping.
 # This helps prevent errors from stale connections in the pool.
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True
@@ -74,6 +74,31 @@ def shutdown_session(exception=None):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+# NEW: Efficiently fetches current prices for multiple tickers
+@app.route('/api/quotes', methods=['POST'])
+def get_quotes():
+    """Fetches current price for a list of tickers for the portfolio snapshot."""
+    try:
+        data = request.get_json()
+        tickers_str = " ".join(data.get('tickers', []))
+        if not tickers_str:
+            return jsonify({})
+
+        tickers = yf.Tickers(tickers_str)
+        
+        quotes = {}
+        # The yf.Tickers object is a dictionary-like object.
+        for ticker_symbol, ticker_obj in tickers.tickers.items():
+            # yfinance can be inconsistent, so we access info safely
+            info = ticker_obj.info
+            quotes[ticker_symbol] = {
+                'currentPrice': info.get('regularMarketPrice'),
+                'previousClose': info.get('previousClose')
+            }
+        return jsonify(quotes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/stock/<ticker_symbol>')
 def get_stock_data(ticker_symbol):
