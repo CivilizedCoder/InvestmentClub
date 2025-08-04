@@ -34,7 +34,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Render content when a tab is clicked
                 switch (tab) {
-                    case 'home': renderPortfolioSummary(); break;
+                    case 'home':
+                        // Reset home view
+                        document.getElementById('homeDashboard').classList.remove('hidden');
+                        document.getElementById('stockDataView').classList.add('hidden');
+                        renderPortfolioSummary(); 
+                        break;
                     case 'portfolio': renderPortfolioDashboard(); break;
                     case 'transactions': renderTransactionHistory(); break;
                     case 'presentations': renderPresentations(); break;
