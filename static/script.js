@@ -95,13 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && fetchStockData());
         document.getElementById('presentationForm')?.addEventListener('submit', handlePresentationSubmit);
 
-        const navLinks = document.querySelectorAll('.nav-link');
-        navLinks.forEach(link => {
-            // Remove old listeners to prevent duplicates if this is ever re-called
-            link.replaceWith(link.cloneNode(true));
-        });
-
-        // Add new listeners
+        // Add event listeners to navigation links
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -286,10 +280,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('tr');
             row.className = 'border-b border-gray-800 hover:bg-gray-800';
             
-            // FIX: Handle potential null values for tracked stocks or incomplete data
-            const quantityText = item.quantity ? `${item.quantity.toFixed(4)} shares` : 'N/A';
-            const dollarValueText = item.dollarValue ? `$${item.dollarValue.toFixed(2)}` : 'N/A';
-            const priceText = item.price ? `$${item.price.toFixed(2)}` : 'N/A';
+            // FIX: Use more robust checks for null/undefined before calling .toFixed()
+            const quantityText = item.quantity != null ? `${item.quantity.toFixed(4)} shares` : 'N/A';
+            const dollarValueText = item.dollarValue != null ? `$${item.dollarValue.toFixed(2)}` : 'N/A';
+            const priceText = item.price != null ? `$${item.price.toFixed(2)}` : 'N/A';
             
             const purchaseDetail = item.purchaseType === 'quantity' ? quantityText : (item.purchaseType === 'value' ? dollarValueText : 'N/A');
 
@@ -348,15 +342,22 @@ document.addEventListener('DOMContentLoaded', () => {
         let totalCurrentValue = 0, totalCost = 0;
         const sectors = {};
         realHoldings.forEach(h => {
-            const currentPrice = quotes[h.symbol]?.currentPrice || h.price;
-            const currentValue = h.quantity * currentPrice;
+            // FIX: Default null quantity/dollarValue to 0 for calculations
+            const quantity = h.quantity || 0;
+            const dollarValue = h.dollarValue || 0;
+            
+            const currentPrice = quotes[h.symbol]?.currentPrice || h.price || 0;
+            const currentValue = quantity * currentPrice;
             const sectorName = h.sector || 'Other';
+
             if (!sectors[sectorName]) sectors[sectorName] = { holdings: [], totalCost: 0, currentValue: 0 };
+            
             sectors[sectorName].holdings.push({ ...h, currentValue });
-            sectors[sectorName].totalCost += h.dollarValue;
+            sectors[sectorName].totalCost += dollarValue;
             sectors[sectorName].currentValue += currentValue;
+            
             totalCurrentValue += currentValue;
-            totalCost += h.dollarValue;
+            totalCost += dollarValue;
         });
         const totalEarnings = totalCurrentValue - totalCost;
         const earningsColor = totalEarnings >= 0 ? 'text-green-400' : 'text-red-400';
@@ -373,7 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const sectorEarningsColor = sectorEarnings >= 0 ? 'text-green-400' : 'text-red-400';
             const sectorCard = document.createElement('div');
             sectorCard.className = 'card';
-            sectorCard.innerHTML = `<h4 class="text-xl font-bold mb-4">${sectorName}</h4><div class="grid grid-cols-3 gap-4 mb-4 text-center"><div><p class="text-sm text-gray-400">Invested</p><p class="font-semibold">$${sector.totalCost.toFixed(2)}</p></div><div><p class="text-sm text-gray-400">Current Value</p><p class="font-semibold">$${sector.currentValue.toFixed(2)}</p></div><div><p class="text-sm text-gray-400">Earnings</p><p class="font-semibold ${sectorEarningsColor}">${sectorEarnings >= 0 ? '+' : '-'}$${Math.abs(sectorEarnings).toFixed(2)}</p></div></div><table class="w-full text-sm"><thead><tr class="border-b border-gray-700"><th class="p-2 text-left">Symbol</th><th class="p-2 text-right">Qty</th><th class="p-2 text-right">Cost</th><th class="p-2 text-right">Value</th></tr></thead><tbody>${sector.holdings.map(h => `<tr class="border-b border-gray-800"><td class="p-2 font-bold">${h.symbol}</td><td class="p-2 text-right">${h.quantity.toFixed(2)}</td><td class="p-2 text-right">$${h.dollarValue.toFixed(2)}</td><td class="p-2 text-right">$${h.currentValue.toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
+            sectorCard.innerHTML = `<h4 class="text-xl font-bold mb-4">${sectorName}</h4><div class="grid grid-cols-3 gap-4 mb-4 text-center"><div><p class="text-sm text-gray-400">Invested</p><p class="font-semibold">$${sector.totalCost.toFixed(2)}</p></div><div><p class="text-sm text-gray-400">Current Value</p><p class="font-semibold">$${sector.currentValue.toFixed(2)}</p></div><div><p class="text-sm text-gray-400">Earnings</p><p class="font-semibold ${sectorEarningsColor}">${sectorEarnings >= 0 ? '+' : '-'}$${Math.abs(sectorEarnings).toFixed(2)}</p></div></div><table class="w-full text-sm"><thead><tr class="border-b border-gray-700"><th class="p-2 text-left">Symbol</th><th class="p-2 text-right">Qty</th><th class="p-2 text-right">Cost</th><th class="p-2 text-right">Value</th></tr></thead><tbody>${sector.holdings.map(h => `<tr class="border-b border-gray-800"><td class="p-2 font-bold">${h.symbol}</td><td class="p-2 text-right">${(h.quantity || 0).toFixed(2)}</td><td class="p-2 text-right">$${(h.dollarValue || 0).toFixed(2)}</td><td class="p-2 text-right">$${(h.currentValue || 0).toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
             breakdownEl.appendChild(sectorCard);
         });
     }
