@@ -86,14 +86,13 @@ def shutdown_session(exception=None):
 
 # --- HELPER FUNCTION FOR MIGRATION ---
 def add_sector_column_if_missing():
-    """Checks for the 'sector' column and adds it if it's missing."""
+    """Checks for the 'sector' column and adds it if it's missing, using an autocommit connection."""
     try:
         inspector = inspect(db.engine)
         columns = [c['name'] for c in inspector.get_columns('holding')]
         if 'sector' not in columns:
-            print("MIGRATION: 'sector' column not found in 'holding' table. Adding it now.")
-            # Use a raw connection with autocommit for the schema change
-            with db.engine.connect() as connection:
+            print("MIGRATION: 'sector' column not found. Adding it now.")
+            with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
                 connection.execute(text('ALTER TABLE holding ADD COLUMN sector VARCHAR(50)'))
             print("MIGRATION: Successfully added 'sector' column.")
             return True
@@ -156,10 +155,10 @@ def get_holdings():
         holdings = Holding.query.all()
         return jsonify([h.to_dict() for h in holdings])
     except ProgrammingError as e:
-        # If the 'sector' column doesn't exist, the query will fail.
-        # In this case, it's safe to assume the portfolio is empty.
         if 'column "sector" of relation "holding" does not exist' in str(e):
-            print("INFO: 'sector' column not found on GET. Returning empty portfolio.")
+            print("INFO: Detected missing 'sector' column on GET. Attempting migration.")
+            add_sector_column_if_missing()
+            # After migration, the portfolio is guaranteed to be empty.
             return jsonify([])
         else:
             # Re-raise other programming errors
@@ -177,32 +176,48 @@ def add_holding():
         sector = 'Other'
         long_name = data['longName']
 
-    new_holding = Holding(
-        symbol=data['symbol'], long_name=long_name, sector=sector,
-        is_real=data['isReal'], purchase_type=data.get('purchaseType'),
-        quantity=data.get('quantity'), price=data.get('price'),
-        dollar_value=data.get('dollarValue'), date=data.get('date')
-    )
+    # Define a function to create the object so we can re-create it after a failed transaction.
+    def create_holding_instance():
+        instance = Holding(
+            symbol=data['symbol'], long_name=long_name, sector=sector,
+            is_real=data['isReal'], purchase_type=data.get('purchaseType'),
+            quantity=data.get('quantity'), price=data.get('price'),
+            dollar_value=data.get('dollarValue'), date=data.get('date')
+        )
+        if data.get('purchaseType') == 'value' and data.get('price') and data['price'] > 0:
+            instance.quantity = data['dollarValue'] / data['price']
+        return instance
 
-    if data.get('purchaseType') == 'value' and data.get('price') and data['price'] > 0:
-        new_holding.quantity = data['dollarValue'] / data['price']
+    new_holding = create_holding_instance()
     
     try:
         db.session.add(new_holding)
         db.session.commit()
     except ProgrammingError as e:
         db.session.rollback()
+        # Check if the error is the specific one we can fix
         if 'column "sector" of relation "holding" does not exist' in str(e):
             print("INFO: Detected missing 'sector' column on POST. Attempting migration.")
+            # Run the migration
             if add_sector_column_if_missing():
-                # Retry the operation after migration
-                print("INFO: Migration successful. Retrying transaction.")
-                db.session.add(new_holding)
+                print("INFO: Migration successful. Retrying transaction with a new session.")
+                # The previous session is now stale because the schema changed.
+                # We must discard it and start a new one. db.session.remove() does this.
+                db.session.remove()
+                
+                # We need to re-create the object to attach it to the new session.
+                holding_to_retry = create_holding_instance()
+                
+                db.session.add(holding_to_retry)
                 db.session.commit()
+                # The original `new_holding` is now detached, so we use the retried one for the response
+                return jsonify(holding_to_retry.to_dict()), 201
             else:
-                return jsonify({"error": "Database schema is out of date and could not be automatically updated. Please contact an administrator."}), 500
+                # The migration failed, so we can't proceed.
+                return jsonify({"error": "Database schema is out of date and could not be automatically updated."}), 500
         else:
-            raise e # Re-raise other programming errors
+            # It was a different database error, so re-raise it.
+            raise e
 
     return jsonify(new_holding.to_dict()), 201
 
