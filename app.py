@@ -76,6 +76,29 @@ class Presentation(db.Model):
 # Create the database tables within the application context
 with app.app_context():
     db.create_all()
+    
+    # FIX: Simple migration to add 'sector' column if it doesn't exist.
+    # This avoids asking the user to drop their database. In a real production
+    # app, a proper migration tool like Alembic should be used.
+    try:
+        from sqlalchemy import text
+        # Use a transaction to perform the check and potential alteration
+        with db.engine.connect() as connection:
+            # Check if the column exists
+            result = connection.execute(text("""
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name='holding' AND column_name='sector'
+            """)).fetchone()
+            
+            if result is None:
+                # Column does not exist, so add it
+                connection.execute(text('ALTER TABLE holding ADD COLUMN sector VARCHAR(50)'))
+                print("Successfully added 'sector' column to 'holding' table.")
+    except Exception as e:
+        # This might fail for various reasons (e.g., permissions), but we don't
+        # want it to crash the app on startup.
+        print(f"Info: Could not perform simple migration for 'sector' column: {e}")
+
 
 # Teardown function to ensure database sessions are closed after each request.
 @app.teardown_appcontext
