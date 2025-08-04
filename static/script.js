@@ -47,6 +47,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // FIX: Render content only when the tab is made active
                 if (tab === 'home') {
+                    // Reset the home view to show the summary, not a stale search
+                    const homeDashboard = document.getElementById('homeDashboard');
+                    const stockDataView = document.getElementById('stockDataView');
+                    if (homeDashboard) homeDashboard.classList.remove('hidden');
+                    if (stockDataView) stockDataView.classList.add('hidden');
                     renderPortfolioSummary();
                 } else if (tab === 'portfolio') {
                     renderPortfolioList();
@@ -75,6 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStockData = data;
                 if (homeDashboard) homeDashboard.classList.add('hidden');
                 
+                // Inject the detailed stock view HTML if it doesn't exist
                 if (stockDataView && stockDataView.innerHTML.trim() === '') {
                     stockDataView.innerHTML = getStockDataViewHtml();
                     // Re-initialize listeners for the newly added elements
@@ -255,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-2 card">
+                <div class="lg-col-span-2 card">
                     <div id="dateRangeDisplay" class="text-center text-gray-400 font-medium mb-4"></div>
                     <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
                     <div class="mt-8">
