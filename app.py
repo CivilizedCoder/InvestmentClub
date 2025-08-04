@@ -36,27 +36,44 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = { 'pool_pre_ping': True }
 # Now, associate the database with the app instance.
 db.init_app(app)
 
-# --- DATABASE MODEL ---
+# --- DATABASE MODELS ---
 class Holding(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     symbol = db.Column(db.String(10), nullable=False)
     long_name = db.Column(db.String(100), nullable=False)
+    sector = db.Column(db.String(50), nullable=True)
     is_real = db.Column(db.Boolean, nullable=False)
     purchase_type = db.Column(db.String(20))
     quantity = db.Column(db.Float)
-    price = db.Column(db.Float)
-    dollar_value = db.Column(db.Float)
+    price = db.Column(db.Float) # Price per share at purchase
+    dollar_value = db.Column(db.Float) # Total cost at purchase
     date = db.Column(db.String(20))
 
     def to_dict(self):
         return {
             'id': self.id, 'symbol': self.symbol, 'longName': self.long_name,
-            'isReal': self.is_real, 'purchaseType': self.purchase_type,
-            'quantity': self.quantity, 'price': self.price,
-            'dollarValue': self.dollar_value, 'date': self.date
+            'sector': self.sector, 'isReal': self.is_real, 
+            'purchaseType': self.purchase_type, 'quantity': self.quantity, 
+            'price': self.price, 'dollarValue': self.dollar_value, 'date': self.date
         }
 
-# Create the database table within the application context
+class Presentation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    url = db.Column(db.String(500), nullable=False)
+    ticker = db.Column(db.String(10), nullable=False)
+    action = db.Column(db.String(10), nullable=False) # 'Buy' or 'Sell'
+    votes_for = db.Column(db.Integer, default=0)
+    votes_against = db.Column(db.Integer, default=0)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'title': self.title, 'url': self.url,
+            'ticker': self.ticker, 'action': self.action,
+            'votesFor': self.votes_for, 'votesAgainst': self.votes_against
+        }
+
+# Create the database tables within the application context
 with app.app_context():
     db.create_all()
 
@@ -77,13 +94,16 @@ def get_quotes():
         data = request.get_json()
         tickers_str = " ".join(data.get('tickers', []))
         if not tickers_str: return jsonify({})
+        
         tickers = yf.Tickers(tickers_str)
-        quotes = {
-            ts: {
-                'currentPrice': t.info.get('regularMarketPrice'),
-                'previousClose': t.info.get('previousClose')
-            } for ts, t in tickers.tickers.items()
-        }
+        quotes = {}
+        for ts, t in tickers.tickers.items():
+            info = t.info
+            quotes[ts] = {
+                'currentPrice': info.get('regularMarketPrice'),
+                'previousClose': info.get('previousClose'),
+                'sector': info.get('sector', 'N/A') # Also return sector
+            }
         return jsonify(quotes)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -99,6 +119,7 @@ def get_stock_data(ticker_symbol):
         hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
         data = {
             'symbol': info.get('symbol'), 'longName': info.get('longName'),
+            'sector': info.get('sector', 'Other'),
             'currentPrice': info.get('regularMarketPrice'), 'dayHigh': info.get('dayHigh'),
             'dayLow': info.get('dayLow'), 'marketCap': info.get('marketCap'),
             'volume': info.get('volume'), 'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
@@ -109,33 +130,9 @@ def get_stock_data(ticker_symbol):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# FIX: Renamed endpoint to match the frontend's API call
-@app.route('/api/portfolio_data', methods=['POST'])
-def get_portfolio_data():
-    try:
-        data = request.get_json()
-        tickers = data.get('tickers')
-        if not tickers: return jsonify({"error": "No tickers provided"}), 400
-        
-        portfolio_data = yf.download(tickers, period="5y")
-        if portfolio_data.empty: return jsonify({"error": "Could not fetch data"}), 404
-        
-        close_prices = portfolio_data['Close']
-        
-        # FIX: More robustly handle single vs. multiple tickers
-        if isinstance(close_prices, pd.Series):
-            df = close_prices.to_frame(name=tickers[0])
-        else:
-            df = close_prices
-            
-        df = df.dropna()
-        df.index = df.index.strftime('%Y-%m-%d')
-        return df.to_json(orient='index')
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 # --- DATABASE API ENDPOINTS ---
 
+# Holdings (used for Portfolio and Transactions)
 @app.route('/api/portfolio', methods=['GET'])
 def get_holdings():
     holdings = Holding.query.all()
@@ -144,11 +141,32 @@ def get_holdings():
 @app.route('/api/portfolio', methods=['POST'])
 def add_holding():
     data = request.get_json()
+    
+    # Fetch sector info from yfinance
+    try:
+        stock_info = yf.Ticker(data['symbol']).info
+        sector = stock_info.get('sector', 'Other')
+        long_name = stock_info.get('longName', data['longName'])
+    except Exception:
+        sector = 'Other'
+        long_name = data['longName']
+
     new_holding = Holding(
-        symbol=data['symbol'], long_name=data['longName'], is_real=data['isReal'],
-        purchase_type=data.get('purchaseType'), quantity=data.get('quantity'),
-        price=data.get('price'), dollar_value=data.get('dollarValue'), date=data.get('date')
+        symbol=data['symbol'],
+        long_name=long_name,
+        sector=sector,
+        is_real=data['isReal'],
+        purchase_type=data.get('purchaseType'),
+        quantity=data.get('quantity'),
+        price=data.get('price'),
+        dollar_value=data.get('dollarValue'),
+        date=data.get('date')
     )
+
+    # If purchase is by value, calculate quantity
+    if data.get('purchaseType') == 'value' and data.get('price') and data['price'] > 0:
+        new_holding.quantity = data['dollarValue'] / data['price']
+
     db.session.add(new_holding)
     db.session.commit()
     return jsonify(new_holding.to_dict()), 201
@@ -160,6 +178,47 @@ def delete_holding(holding_id):
     db.session.delete(holding)
     db.session.commit()
     return jsonify({"message": "Holding deleted successfully"})
+
+# Presentations
+@app.route('/api/presentations', methods=['GET'])
+def get_presentations():
+    presentations = Presentation.query.order_by(Presentation.id.desc()).all()
+    return jsonify([p.to_dict() for p in presentations])
+
+@app.route('/api/presentations', methods=['POST'])
+def add_presentation():
+    data = request.get_json()
+    if not all(k in data for k in ['title', 'url', 'ticker', 'action']):
+        return jsonify({"error": "Missing required fields"}), 400
+    
+    new_presentation = Presentation(
+        title=data['title'],
+        url=data['url'],
+        ticker=data['ticker'].upper(),
+        action=data['action']
+    )
+    db.session.add(new_presentation)
+    db.session.commit()
+    return jsonify(new_presentation.to_dict()), 201
+
+@app.route('/api/presentations/<int:presentation_id>/vote', methods=['POST'])
+def vote_on_presentation(presentation_id):
+    data = request.get_json()
+    vote_type = data.get('voteType') # 'for' or 'against'
+    
+    presentation = Presentation.query.get(presentation_id)
+    if not presentation:
+        return jsonify({"error": "Presentation not found"}), 404
+        
+    if vote_type == 'for':
+        presentation.votes_for += 1
+    elif vote_type == 'against':
+        presentation.votes_against += 1
+    else:
+        return jsonify({"error": "Invalid vote type"}), 400
+        
+    db.session.commit()
+    return jsonify(presentation.to_dict())
 
 if __name__ == '__main__':
     app.run(debug=True)
