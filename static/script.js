@@ -8,11 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- INITIALIZATION ---
     function initialize() {
-        // Event listeners for forms that are always present
         document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
         document.getElementById('logoutBtn')?.addEventListener('click', handleLogout);
-        
-        // Check for an active session on page load
         checkSession();
     }
 
@@ -33,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
         const errorDiv = document.getElementById('loginError');
+        errorDiv.classList.add('hidden');
 
         try {
             const response = await fetch('/api/login', {
@@ -55,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleLogout() {
         await fetch('/api/logout', { method: 'POST' });
         currentUser = null;
-        portfolio = []; // Clear data on logout
+        portfolio = [];
         showLogin();
     }
 
@@ -68,37 +66,25 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loginScreen').classList.add('hidden');
         document.getElementById('dashboardScreen').classList.remove('hidden');
         
-        // Setup UI based on user role
         setupUIAccess();
-        
-        // Initialize dashboard event listeners now that it's visible
         initializeDashboardEventListeners();
 
-        // Fetch initial data
         await fetchPortfolio();
         
-        // Activate the default tab
         document.querySelector('.nav-link[data-tab="home"]').click();
     }
 
     // --- UI & ACCESS CONTROL ---
     function setupUIAccess() {
         if (!currentUser) return;
-
-        const roles = {
-            guest: 0,
-            member: 1,
-            admin: 2
-        };
+        const roles = { guest: 0, member: 1, admin: 2 };
         const userLevel = roles[currentUser.role];
 
-        // Show/hide nav links
         document.querySelectorAll('[data-role]').forEach(el => {
             const requiredLevel = roles[el.dataset.role];
-            el.style.display = userLevel >= requiredLevel ? '' : 'none';
+            el.style.display = userLevel >= requiredLevel ? '' : 'flex'; // Use flex for sidebar items
         });
 
-        // Update user info display
         const userInfoEl = document.getElementById('userInfo');
         userInfoEl.innerHTML = `Logged in as: <strong class="font-bold">${currentUser.username}</strong><br>Role: <span class="capitalize">${currentUser.role}</span>`;
     }
@@ -111,11 +97,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const navLinks = document.querySelectorAll('.nav-link');
         navLinks.forEach(link => {
+            // Remove old listeners to prevent duplicates if this is ever re-called
+            link.replaceWith(link.cloneNode(true));
+        });
+
+        // Add new listeners
+        document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const tab = link.dataset.tab;
 
-                navLinks.forEach(lnk => lnk.classList.remove('active'));
+                document.querySelectorAll('.nav-link').forEach(lnk => lnk.classList.remove('active'));
                 link.classList.add('active');
 
                 document.querySelectorAll('.tab-content').forEach(content => {
@@ -123,12 +115,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (content.id === `${tab}Content`) content.classList.remove('hidden');
                 });
                 
-                // Trigger render functions when a tab is activated
                 switch (tab) {
                     case 'home': renderPortfolioSummary(); break;
                     case 'portfolio': renderPortfolioDashboard(); break;
                     case 'transactions': renderTransactionHistory(); break;
                     case 'presentations': renderPresentations(); break;
+                    case 'about': break; // No dynamic content needed
+                    case 'admin': break; // No dynamic content needed
                 }
             });
         });
@@ -149,10 +142,8 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(data => {
                 currentStockData = data;
                 homeDashboard.classList.add('hidden');
-                
                 stockDataView.innerHTML = getStockDataViewHtml();
                 stockDataView.classList.remove('hidden');
-                
                 updateStockInfoUI(data);
                 setupIndividualStockChart(data.historical);
                 
@@ -244,23 +235,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- RENDER FUNCTIONS FOR EACH TAB ---
     async function renderPortfolioSummary() {
         const homeDashboard = document.getElementById('homeDashboard');
-        const welcomeMessageHTML = `
-            <div class="card text-center transition-all duration-500">
-                <h2 class="text-2xl font-bold mb-2">Welcome, ${currentUser.username}!</h2>
-                <p>Search for a stock to get started, or check out the other tabs.</p>
-            </div>`;
+        const welcomeMessageHTML = `<div class="card text-center transition-all duration-500"><h2 class="text-2xl font-bold mb-2">Welcome, ${currentUser.username}!</h2><p>Search for a stock to get started, or check out the other tabs.</p></div>`;
         
         if (currentUser.role === 'guest') {
             homeDashboard.innerHTML = welcomeMessageHTML;
             return;
         }
 
-        homeDashboard.innerHTML = `
-            <div id="portfolioSummary">
-                <h3 class="text-2xl font-bold mb-4">Portfolio Snapshot</h3>
-                <div id="portfolioSummaryList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-            </div>`;
-        
+        homeDashboard.innerHTML = `<div id="portfolioSummary"><h3 class="text-2xl font-bold mb-4">Portfolio Snapshot</h3><div id="portfolioSummaryList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div></div>`;
         const summaryList = document.getElementById('portfolioSummaryList');
         if (portfolio.length === 0) {
             summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings in portfolio yet.</p>';
@@ -312,37 +294,25 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderPresentations() {
         const listEl = document.getElementById('presentationList');
         const formContainer = document.getElementById('presentationFormContainer');
-        
-        // Hide form for guests, show for members/admins
         formContainer.style.display = currentUser.role !== 'guest' ? '' : 'none';
-
         listEl.innerHTML = '<p class="card">Loading presentations...</p>';
         try {
             const response = await fetch('/api/presentations');
             const presentations = await response.json();
             listEl.innerHTML = '';
-
             if (presentations.length === 0) {
                 listEl.innerHTML = '<p class="card text-gray-500">No presentations have been submitted yet.</p>';
                 return;
             }
-
             presentations.forEach(p => {
                 const card = document.createElement('div');
                 card.className = 'card';
                 const actionColor = p.action === 'Buy' ? 'text-green-400' : 'text-red-400';
-                const voteButtons = currentUser.role !== 'guest' ? `
-                    <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button>
-                    <button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>
-                ` : `<span class="text-sm text-gray-500">Login as member to vote</span>`;
-                
+                const voteButtons = currentUser.role !== 'guest' ? `<button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button><button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>` : `<span class="text-sm text-gray-500">Login as member to vote</span>`;
                 card.innerHTML = `<h4 class="text-xl font-bold">${p.title}</h4><p class="text-sm text-gray-400 mb-3">Proposing to <span class="font-bold ${actionColor}">${p.action} ${p.ticker}</span></p><a href="${p.url}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline mb-4 block">View Presentation</a><div class="flex items-center justify-end space-x-4">${voteButtons}</div>`;
                 listEl.appendChild(card);
             });
-
-            if (currentUser.role !== 'guest') {
-                listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));
-            }
+            if (currentUser.role !== 'guest') listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));
         } catch (error) {
             listEl.innerHTML = '<p class="card text-red-400">Could not load presentations.</p>';
         }
@@ -351,17 +321,15 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderPortfolioDashboard() {
         const realHoldings = portfolio.filter(p => p.isReal);
         if (realHoldings.length === 0) {
-            document.getElementById('sectorBreakdown').innerHTML = '<p class="card text-center text-gray-500">No real holdings in portfolio to analyze.</p>';
+            document.getElementById('sectorBreakdown').innerHTML = '<p class="card text-center text-gray-500">No real holdings to analyze.</p>';
             document.getElementById('portfolioTotalValue').textContent = '$0.00';
             document.getElementById('portfolioTotalCost').textContent = '$0.00';
             document.getElementById('portfolioTotalEarnings').textContent = '$0.00';
             return;
         }
-
         const tickers = [...new Set(realHoldings.map(p => p.symbol))];
         const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
         const quotes = await response.json();
-
         let totalCurrentValue = 0, totalCost = 0;
         const sectors = {};
         realHoldings.forEach(h => {
@@ -375,7 +343,6 @@ document.addEventListener('DOMContentLoaded', () => {
             totalCurrentValue += currentValue;
             totalCost += h.dollarValue;
         });
-
         const totalEarnings = totalCurrentValue - totalCost;
         const earningsColor = totalEarnings >= 0 ? 'text-green-400' : 'text-red-400';
         document.getElementById('portfolioTotalValue').textContent = `$${totalCurrentValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -383,7 +350,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const earningsEl = document.getElementById('portfolioTotalEarnings');
         earningsEl.textContent = `${totalEarnings >= 0 ? '+' : '-'}$${Math.abs(totalEarnings).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
         earningsEl.className = `text-3xl font-bold mt-2 ${earningsColor}`;
-
         const breakdownEl = document.getElementById('sectorBreakdown');
         breakdownEl.innerHTML = '';
         Object.keys(sectors).sort().forEach(sectorName => {
@@ -401,28 +367,17 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handlePresentationSubmit(e) {
         e.preventDefault();
         const form = e.target;
-        const presentation = {
-            title: form.querySelector('#presentationTitle').value,
-            url: form.querySelector('#presentationUrl').value,
-            ticker: form.querySelector('#presentationTicker').value,
-            action: form.querySelector('input[name="presentationAction"]:checked').value,
-        };
+        const presentation = { title: form.querySelector('#presentationTitle').value, url: form.querySelector('#presentationUrl').value, ticker: form.querySelector('#presentationTicker').value, action: form.querySelector('input[name="presentationAction"]:checked').value };
         const response = await fetch('/api/presentations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(presentation) });
-        if (response.ok) {
-            form.reset();
-            renderPresentations();
-        } else alert('Failed to submit presentation.');
+        if (response.ok) { form.reset(); renderPresentations(); } else alert('Failed to submit presentation.');
     }
-
     async function handleVote(e) {
         const button = e.currentTarget;
         const id = button.dataset.id;
         const voteType = button.dataset.type;
         const response = await fetch(`/api/presentations/${id}/vote`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voteType }) });
-        if (response.ok) renderPresentations();
-        else alert('Failed to record vote.');
+        if (response.ok) renderPresentations(); else alert('Failed to record vote.');
     }
-
     function toggleRealPurchaseInputs() { document.getElementById('realPurchaseInputs').classList.toggle('hidden', !this.checked); }
     function togglePurchaseTypeInputs() {
         const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
@@ -430,82 +385,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('valueInputs').classList.toggle('hidden', purchaseType === 'quantity');
     }
 
-    // --- CHARTING & UI TEMPLATES ---
-    function getStockDataViewHtml() {
-        return `<div class="card mb-6"><div class="flex justify-between items-center"><div><h2 id="stockName" class="text-3xl font-bold"></h2><p id="stockSymbol" class="text-lg text-gray-400"></p></div><div class="text-right"><p id="currentPrice" class="text-4xl font-bold"></p></div></div></div><div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-2 card"><div id="dateRangeDisplay" class="text-center text-gray-400 font-medium mb-4"></div><div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div><div class="mt-8"><p class="text-center text-sm text-gray-500 mb-2">Timeline Navigator</p><div id="timelineContainer" style="height: 100px;"><canvas id="timelineChart"></canvas></div></div></div><div class="card space-y-4"><h3 class="text-xl font-bold mb-2">Key Statistics</h3><div class="kpi-grid"><div><p class="kpi-label">Day High</p><p id="dayHigh" class="kpi-value"></p></div><div><p class="kpi-label">Day Low</p><p id="dayLow" class="kpi-value"></p></div><div><p class="kpi-label">52-Wk High</p><p id="fiftyTwoWeekHigh" class="kpi-value"></p></div><div><p class="kpi-label">52-Wk Low</p><p id="fiftyTwoWeekLow" class="kpi-value"></p></div><div><p class="kpi-label">Market Cap</p><p id="marketCap" class="kpi-value"></p></div><div><p class="kpi-label">Volume</p><p id="volume" class="kpi-value"></p></div><div><p class="kpi-label">P/E Ratio</p><p id="forwardPE" class="kpi-value"></p></div></div><div id="addToPortfolioSection" class="pt-4 border-t border-gray-700"><h4 class="font-semibold mb-2">Add <span id="portfolioTicker"></span> to Portfolio</h4><div class="flex items-center mb-3"><input id="isRealCheckbox" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-cyan-600 focus:ring-cyan-500 bg-gray-700"><label for="isRealCheckbox" class="ml-2 block text-sm text-gray-300">This is a real holding</label></div><div id="realPurchaseInputs" class="space-y-3 hidden"><div class="flex items-center space-x-4 mb-2"><label class="flex items-center text-sm cursor-pointer"><input type="radio" name="purchaseType" value="quantity" class="form-radio" checked><span class="ml-2">By Quantity</span></label><label class="flex items-center text-sm cursor-pointer"><input type="radio" name="purchaseType" value="value" class="form-radio"><span class="ml-2">By Value</span></label></div><div id="quantityInputs" class="space-y-3"><input type="number" step="any" id="purchaseQuantity" placeholder="Quantity (e.g., 10)" class="form-input"><input type="number" step="any" id="purchasePrice" placeholder="Price per Share" class="form-input"></div><div id="valueInputs" class="space-y-3 hidden"><input type="number" step="any" id="purchaseValue" placeholder="Total Dollar Value (e.g., 500)" class="form-input"></div><input type="date" id="purchaseDate" class="form-input mt-3"></div><button id="addToPortfolioBtn" class="button-success w-full mt-3">Add to Portfolio</button></div></div></div>`;
-    }
-    function setupIndividualStockChart(historicalData) {
-        if (stockChart) stockChart.destroy();
-        if (timelineChart) timelineChart.destroy();
-        if (!historicalData || historicalData.length === 0) return;
-        const stockData = historicalData.map(d => ({ date: d.Date, price: d.Close }));
-        Chart.defaults.color = '#E5E7EB';
-        Chart.defaults.font.family = "'Inter', sans-serif";
-        const mainCtx = document.getElementById('stockChart').getContext('2d');
-        stockChart = new Chart(mainCtx, createChartConfig('Stock Price (USD)'));
-        const timelineCtx = document.getElementById('timelineChart').getContext('2d');
-        timelineChart = new Chart(timelineCtx, createTimelineConfig(stockData));
-        addTimelineInteraction(document.getElementById('timelineChart'), timelineChart, stockChart, stockData);
-        updateMainChart(timelineChart, stockChart);
-    }
-    function addTimelineInteraction(canvas, timeline, mainChart, data) {
-        let isDragging = false, isResizingStart = false, isResizingEnd = false;
-        let dragStartX = 0, initialStartIndex = 0, initialEndIndex = 0;
-        const getIndexFromX = (x) => {
-            const { left, right } = timeline.chartArea;
-            const index = Math.round((x - left) / (right - left) * (data.length - 1));
-            return Math.max(0, Math.min(data.length - 1, index));
-        };
-        canvas.addEventListener('mousedown', (e) => {
-            if (!timeline.getDatasetMeta(0).data.length) return;
-            const x = e.offsetX;
-            const meta = timeline.getDatasetMeta(0);
-            const { startIndex, endIndex } = timeline.options.plugins.brush;
-            const startX = meta.data[startIndex].x, endX = meta.data[endIndex].x;
-            if (x >= startX - 8 && x <= startX + 8) isResizingStart = true;
-            else if (x >= endX - 8 && x <= endX + 8) isResizingEnd = true;
-            else if (x > startX && x < endX) {
-                isDragging = true; dragStartX = x;
-                initialStartIndex = startIndex; initialEndIndex = endIndex;
-            }
-        });
-        window.addEventListener('mousemove', (e) => {
-            if (!isDragging && !isResizingStart && !isResizingEnd) return;
-            const x = e.clientX - canvas.getBoundingClientRect().left;
-            let { startIndex, endIndex } = timeline.options.plugins.brush;
-            const newIndex = getIndexFromX(x);
-            if (isResizingStart) { if (newIndex < endIndex) timeline.options.plugins.brush.startIndex = newIndex; }
-            else if (isResizingEnd) { if (newIndex > startIndex) timeline.options.plugins.brush.endIndex = newIndex; }
-            else if (isDragging) {
-                const diff = newIndex - getIndexFromX(dragStartX);
-                let newStartIndex = initialStartIndex + diff, newEndIndex = initialEndIndex + diff;
-                if (newStartIndex >= 0 && newEndIndex < data.length) {
-                    timeline.options.plugins.brush.startIndex = newStartIndex;
-                    timeline.options.plugins.brush.endIndex = newEndIndex;
-                }
-            }
-            timeline.update('none');
-            updateMainChart(timeline, mainChart);
-        });
-        window.addEventListener('mouseup', () => isDragging = isResizingStart = isResizingEnd = false);
-    }
-    function updateMainChart(timeline, mainChart) {
-        const { startIndex, endIndex } = timeline.options.plugins.brush;
-        const slicedData = timeline.data.datasets[0].data.slice(startIndex, endIndex + 1);
-        const slicedLabels = timeline.data.labels.slice(startIndex, endIndex + 1);
-        mainChart.data.labels = slicedLabels;
-        mainChart.data.datasets[0].data = slicedData;
-        mainChart.update('none');
-        const dateRangeDisplay = document.getElementById('dateRangeDisplay');
-        if (dateRangeDisplay) dateRangeDisplay.textContent = (slicedLabels && slicedLabels.length > 0) ? `${slicedLabels[0]} to ${slicedLabels[slicedLabels.length - 1]}` : 'No date range available.';
-    }
-    function createChartConfig(label) {
-        return { type: 'line', data: { labels: [], datasets: [{ label: label, data: [], borderColor: '#22D3EE', backgroundColor: 'rgba(34, 211, 238, 0.1)', fill: true, tension: 0.2, pointRadius: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } } }, scales: { y: { grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: '#9CA3AF' } }, x: { grid: { display: false }, ticks: { color: '#9CA3AF', maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } } } } };
-    }
-    function createTimelineConfig(stockData) {
-        const brushPlugin = { id: 'brush', afterDraw: (chart) => { if (!chart.getDatasetMeta(0).data.length) return; const { ctx, chartArea: { left, top, right, bottom } } = chart; const { startIndex, endIndex } = chart.options.plugins.brush; const startX = chart.getDatasetMeta(0).data[startIndex].x, endX = chart.getDatasetMeta(0).data[endIndex].x; ctx.save(); ctx.fillStyle = 'rgba(100, 116, 139, 0.3)'; ctx.fillRect(left, top, startX - left, bottom - top); ctx.fillRect(endX, top, right - endX, bottom - top); ctx.lineWidth = 1; ctx.strokeStyle = '#22D3EE'; ctx.strokeRect(startX, top, endX - startX, bottom - top); ctx.restore(); } };
-        return { type: 'line', data: { labels: stockData.map(d => d.date), datasets: [{ data: stockData.map(d => d.price), borderColor: '#475569', fill: false, pointRadius: 0, borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false }, brush: { startIndex: Math.max(0, stockData.length - 252), endIndex: stockData.length - 1 } }, scales: { y: { display: false }, x: { display: false } } }, plugins: [brushPlugin] };
-    }
+    // --- CHARTING & UI TEMPLATES (UNCHANGED) ---
+    function getStockDataViewHtml(){return`<div class="card mb-6"><div class="flex justify-between items-center"><div><h2 id="stockName" class="text-3xl font-bold"></h2><p id="stockSymbol" class="text-lg text-gray-400"></p></div><div class="text-right"><p id="currentPrice" class="text-4xl font-bold"></p></div></div></div><div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-2 card"><div id="dateRangeDisplay" class="text-center text-gray-400 font-medium mb-4"></div><div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div><div class="mt-8"><p class="text-center text-sm text-gray-500 mb-2">Timeline Navigator</p><div id="timelineContainer" style="height: 100px;"><canvas id="timelineChart"></canvas></div></div></div><div class="card space-y-4"><h3 class="text-xl font-bold mb-2">Key Statistics</h3><div class="kpi-grid"><div><p class="kpi-label">Day High</p><p id="dayHigh" class="kpi-value"></p></div><div><p class="kpi-label">Day Low</p><p id="dayLow" class="kpi-value"></p></div><div><p class="kpi-label">52-Wk High</p><p id="fiftyTwoWeekHigh" class="kpi-value"></p></div><div><p class="kpi-label">52-Wk Low</p><p id="fiftyTwoWeekLow" class="kpi-value"></p></div><div><p class="kpi-label">Market Cap</p><p id="marketCap" class="kpi-value"></p></div><div><p class="kpi-label">Volume</p><p id="volume" class="kpi-value"></p></div><div><p class="kpi-label">P/E Ratio</p><p id="forwardPE" class="kpi-value"></p></div></div><div id="addToPortfolioSection" class="pt-4 border-t border-gray-700"><h4 class="font-semibold mb-2">Add <span id="portfolioTicker"></span> to Portfolio</h4><div class="flex items-center mb-3"><input id="isRealCheckbox" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-cyan-600 focus:ring-cyan-500 bg-gray-700"><label for="isRealCheckbox" class="ml-2 block text-sm text-gray-300">This is a real holding</label></div><div id="realPurchaseInputs" class="space-y-3 hidden"><div class="flex items-center space-x-4 mb-2"><label class="flex items-center text-sm cursor-pointer"><input type="radio" name="purchaseType" value="quantity" class="form-radio" checked><span class="ml-2">By Quantity</span></label><label class="flex items-center text-sm cursor-pointer"><input type="radio" name="purchaseType" value="value" class="form-radio"><span class="ml-2">By Value</span></label></div><div id="quantityInputs" class="space-y-3"><input type="number" step="any" id="purchaseQuantity" placeholder="Quantity (e.g., 10)" class="form-input"><input type="number" step="any" id="purchasePrice" placeholder="Price per Share" class="form-input"></div><div id="valueInputs" class="space-y-3 hidden"><input type="number" step="any" id="purchaseValue" placeholder="Total Dollar Value (e.g., 500)" class="form-input"></div><input type="date" id="purchaseDate" class="form-input mt-3"></div><button id="addToPortfolioBtn" class="button-success w-full mt-3">Add to Portfolio</button></div></div></div>`;}
+    function setupIndividualStockChart(h){if(stockChart)stockChart.destroy();if(timelineChart)timelineChart.destroy();if(!h||h.length===0)return;const s=h.map(d=>({date:d.Date,price:d.Close}));Chart.defaults.color="#E5E7EB";Chart.defaults.font.family="'Inter', sans-serif";const m=document.getElementById("stockChart").getContext("2d");stockChart=new Chart(m,createChartConfig("Stock Price (USD)"));const t=document.getElementById("timelineChart").getContext("2d");timelineChart=new Chart(t,createTimelineConfig(s));addTimelineInteraction(document.getElementById("timelineChart"),timelineChart,stockChart,s);updateMainChart(timelineChart,stockChart)}
+    function addTimelineInteraction(c,t,m,d){let i=!1,s=!1,e=!1,a=0,n=0,l=0;const r=x=>{const{left:L,right:R}=t.chartArea;return Math.max(0,Math.min(d.length-1,Math.round((x-L)/(R-L)*(d.length-1))))};c.addEventListener("mousedown",o=>{if(!t.getDatasetMeta(0).data.length)return;const g=o.offsetX,p=t.getDatasetMeta(0),{startIndex:u,endIndex:h}=t.options.plugins.brush,f=p.data[u].x,y=p.data[h].x;g>=f-8&&g<=f+8?s=!0:g>=y-8&&g<=y+8?e=!0:g>f&&g<y&&(i=!0,a=g,n=u,l=h)});window.addEventListener("mousemove",o=>{if(!i&&!s&&!e)return;const g=o.clientX-c.getBoundingClientRect().left;let{startIndex:p,endIndex:u}=t.options.plugins.brush;const h=r(g);if(s){if(h<u)t.options.plugins.brush.startIndex=h}else if(e){if(h>p)t.options.plugins.brush.endIndex=h}else if(i){const f=h-r(a);let y=n+f,k=l+f;y>=0&&k<d.length&&(t.options.plugins.brush.startIndex=y,t.options.plugins.brush.endIndex=k)}t.update("none");updateMainChart(t,m)});window.addEventListener("mouseup",()=>i=s=e=!1)}
+    function updateMainChart(t,m){const{startIndex:s,endIndex:e}=t.options.plugins.brush,a=t.data.datasets[0].data.slice(s,e+1),n=t.data.labels.slice(s,e+1);m.data.labels=n;m.data.datasets[0].data=a;m.update("none");const l=document.getElementById("dateRangeDisplay");l&&(l.textContent=n&&n.length>0?`${n[0]} to ${n[n.length-1]}`:"No date range available.")}
+    function createChartConfig(l){return{type:"line",data:{labels:[],datasets:[{label:l,data:[],borderColor:"#22D3EE",backgroundColor:"rgba(34, 211, 238, 0.1)",fill:!0,tension:.2,pointRadius:0}]},options:{responsive:!0,maintainAspectRatio:!1,plugins:{legend:{display:!1},tooltip:{mode:"index",intersect:!1,callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString(void 0,{minimumFractionDigits:2,maximumFractionDigits:2})}`}}},scales:{y:{grid:{color:"rgba(255, 255, 255, 0.1)"},ticks:{color:"#9CA3AF"}},x:{grid:{display:!1},ticks:{color:"#9CA3AF",maxRotation:0,autoSkip:!0,maxTicksLimit:7}}}}}}
+    function createTimelineConfig(s){const e={id:"brush",afterDraw:c=>{if(!c.getDatasetMeta(0).data.length)return;const{ctx:t,chartArea:{left:m,top:d,right:a,bottom:n}}=c,{startIndex:l,endIndex:r}=c.options.plugins.brush,o=c.getDatasetMeta(0).data[l].x,g=c.getDatasetMeta(0).data[r].x;t.save();t.fillStyle="rgba(100, 116, 139, 0.3)";t.fillRect(m,d,o-m,n-d);t.fillRect(g,d,a-g,n-d);t.lineWidth=1;t.strokeStyle="#22D3EE";t.strokeRect(o,d,g-o,n-d);t.restore()}};return{type:"line",data:{labels:s.map(d=>d.date),datasets:[{data:s.map(d=>d.price),borderColor:"#475569",fill:!1,pointRadius:0,borderWidth:1}]},options:{responsive:!0,maintainAspectRatio:!1,plugins:{legend:{display:!1},tooltip:{enabled:!1},brush:{startIndex:Math.max(0,s.length-252),endIndex:s.length-1}},scales:{y:{display:!1},x:{display:!1}}},plugins:[e]}}
 
     // --- START THE APP ---
     initialize();
