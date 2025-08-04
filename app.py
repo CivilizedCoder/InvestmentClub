@@ -6,39 +6,42 @@ import pandas as pd
 import os
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import ProgrammingError
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from functools import wraps
 
-# Initialize the SQLAlchemy database extension WITHOUT an app instance.
+# --- FLASK APP INITIALIZATION ---
 db = SQLAlchemy()
+login_manager = LoginManager()
+app = Flask(__name__, static_folder='static', template_folder='templates')
 
-# Initialize the Flask application
-app = Flask(__name__,
-            static_folder='static',
-            template_folder='templates')
-
-# --- DATABASE CONFIGURATION ---
-# Render provides the database URL via an environment variable.
+# --- CONFIGURATION ---
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a-super-secret-key-that-should-be-changed')
 database_url = os.environ.get('DATABASE_URL')
-
-if database_url:
-    # Replace 'postgres://' with 'postgresql://' for SQLAlchemy compatibility
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    
-    # Ensure sslmode=require is present. This is critical for Render databases.
-    if '?' in database_url:
-        if 'sslmode' not in database_url:
-            database_url += '&sslmode=require'
-    else:
-        database_url += '?sslmode=require'
-
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = { 'pool_pre_ping': True }
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True}
 
-# Now, associate the database with the app instance.
+# --- DATABASE & LOGIN MANAGER INIT ---
 db.init_app(app)
+login_manager.init_app(app)
+login_manager.login_view = 'login_page' # Redirect to a conceptual login page if unauthorized
 
 # --- DATABASE MODELS ---
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='guest') # Roles: guest, member, admin
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
 class Holding(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     symbol = db.Column(db.String(10), nullable=False)
@@ -47,8 +50,8 @@ class Holding(db.Model):
     is_real = db.Column(db.Boolean, nullable=False)
     purchase_type = db.Column(db.String(20))
     quantity = db.Column(db.Float)
-    price = db.Column(db.Float) # Price per share at purchase
-    dollar_value = db.Column(db.Float) # Total cost at purchase
+    price = db.Column(db.Float)
+    dollar_value = db.Column(db.Float)
     date = db.Column(db.String(20))
 
     def to_dict(self):
@@ -64,7 +67,7 @@ class Presentation(db.Model):
     title = db.Column(db.String(200), nullable=False)
     url = db.Column(db.String(500), nullable=False)
     ticker = db.Column(db.String(10), nullable=False)
-    action = db.Column(db.String(10), nullable=False) # 'Buy' or 'Sell'
+    action = db.Column(db.String(10), nullable=False)
     votes_for = db.Column(db.Integer, default=0)
     votes_against = db.Column(db.Integer, default=0)
 
@@ -75,70 +78,93 @@ class Presentation(db.Model):
             'votesFor': self.votes_for, 'votesAgainst': self.votes_against
         }
 
-# Create the database tables within the application context
-with app.app_context():
-    db.create_all()
+# --- PERMISSION DECORATORS ---
+def role_required(role):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return jsonify({"error": "Authentication required"}), 401
+            # Admin has access to everything
+            if current_user.role == 'admin':
+                return f(*args, **kwargs)
+            # Check if user role is sufficient
+            if current_user.role != role and role == 'member':
+                 return jsonify({"error": "Insufficient permissions"}), 403
+            if current_user.role != role and role == 'admin':
+                 return jsonify({"error": "Administrator access required"}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
-# Teardown function to ensure database sessions are closed after each request.
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    db.session.remove()
+# --- HELPER FUNCTIONS ---
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
-# --- HELPER FUNCTION FOR MIGRATION ---
 def add_sector_column_if_missing():
-    """Checks for the 'sector' column and adds it if it's missing, using an autocommit connection."""
     try:
         inspector = inspect(db.engine)
         columns = [c['name'] for c in inspector.get_columns('holding')]
         if 'sector' not in columns:
-            print("MIGRATION: 'sector' column not found. Adding it now.")
             with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
                 connection.execute(text('ALTER TABLE holding ADD COLUMN sector VARCHAR(50)'))
-            print("MIGRATION: Successfully added 'sector' column.")
             return True
     except Exception as e:
         print(f"CRITICAL: Failed to execute migration for 'sector' column: {e}")
     return False
 
-# --- HTML & API ROUTES ---
+# --- DB CREATION AND ADMIN USER SETUP ---
+with app.app_context():
+    db.create_all()
+    if not User.query.filter_by(username='timymelon').first():
+        print("Creating default admin user...")
+        admin_user = User(username='timymelon', role='admin')
+        admin_user.set_password('luvm3l0ns')
+        db.session.add(admin_user)
+        db.session.commit()
+        print("Admin user 'timymelon' created.")
+
+# --- ROUTES ---
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/api/quotes', methods=['POST'])
-def get_quotes():
-    try:
-        data = request.get_json()
-        tickers_str = " ".join(data.get('tickers', []))
-        if not tickers_str: return jsonify({})
-        
-        tickers = yf.Tickers(tickers_str)
-        quotes = {}
-        for ts, t in tickers.tickers.items():
-            info = t.info
-            quotes[ts] = {
-                'currentPrice': info.get('regularMarketPrice'),
-                'previousClose': info.get('previousClose'),
-                'sector': info.get('sector', 'N/A')
-            }
-        return jsonify(quotes)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = User.query.filter_by(username=data.get('username')).first()
+    if user and user.check_password(data.get('password')):
+        login_user(user)
+        return jsonify({"username": user.username, "role": user.role})
+    return jsonify({"error": "Invalid username or password"}), 401
+
+@app.route('/api/logout', methods=['POST'])
+@login_required
+def logout():
+    logout_user()
+    return jsonify({"message": "Logged out successfully"})
+
+@app.route('/api/session')
+def get_session():
+    if current_user.is_authenticated:
+        return jsonify({"username": current_user.username, "role": current_user.role})
+    return jsonify({}), 401 # No active session
 
 @app.route('/api/stock/<ticker_symbol>')
 def get_stock_data(ticker_symbol):
+    # This remains public
     try:
         stock = yf.Ticker(ticker_symbol)
         info = stock.info
-        if not info or 'regularMarketPrice' not in info or info.get('regularMarketPrice') is None:
+        if not info or 'regularMarketPrice' not in info:
             return jsonify({"error": "Invalid ticker or data not available"}), 404
         hist = stock.history(period="max").reset_index()
         hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
         data = {
             'symbol': info.get('symbol'), 'longName': info.get('longName'),
-            'sector': info.get('sector', 'Other'),
-            'currentPrice': info.get('regularMarketPrice'), 'dayHigh': info.get('dayHigh'),
-            'dayLow': info.get('dayLow'), 'marketCap': info.get('marketCap'),
+            'sector': info.get('sector', 'Other'), 'currentPrice': info.get('regularMarketPrice'),
+            'dayHigh': info.get('dayHigh'), 'dayLow': info.get('dayLow'), 'marketCap': info.get('marketCap'),
             'volume': info.get('volume'), 'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
             'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow'), 'forwardPE': info.get('forwardPE'),
             'historical': hist[['Date', 'Close']].to_dict('records')
@@ -147,27 +173,35 @@ def get_stock_data(ticker_symbol):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# --- DATABASE API ENDPOINTS ---
+@app.route('/api/quotes', methods=['POST'])
+@login_required
+def get_quotes():
+    # Protected: only logged-in users can get quotes for the portfolio summary
+    data = request.get_json()
+    tickers_str = " ".join(data.get('tickers', []))
+    if not tickers_str: return jsonify({})
+    tickers = yf.Tickers(tickers_str)
+    quotes = {ts: {'currentPrice': t.info.get('regularMarketPrice'), 'previousClose': t.info.get('previousClose'), 'sector': t.info.get('sector', 'N/A')} for ts, t in tickers.tickers.items()}
+    return jsonify(quotes)
 
 @app.route('/api/portfolio', methods=['GET'])
+@login_required
+@role_required('member')
 def get_holdings():
     try:
         holdings = Holding.query.all()
         return jsonify([h.to_dict() for h in holdings])
     except ProgrammingError as e:
         if 'column "sector" of relation "holding" does not exist' in str(e):
-            print("INFO: Detected missing 'sector' column on GET. Attempting migration.")
             add_sector_column_if_missing()
-            # After migration, the portfolio is guaranteed to be empty.
             return jsonify([])
-        else:
-            # Re-raise other programming errors
-            raise e
+        raise e
 
 @app.route('/api/portfolio', methods=['POST'])
+@login_required
+@role_required('admin')
 def add_holding():
     data = request.get_json()
-    
     try:
         stock_info = yf.Ticker(data['symbol']).info
         sector = stock_info.get('sector', 'Other')
@@ -176,7 +210,6 @@ def add_holding():
         sector = 'Other'
         long_name = data['longName']
 
-    # Define a function to create the object so we can re-create it after a failed transaction.
     def create_holding_instance():
         instance = Holding(
             symbol=data['symbol'], long_name=long_name, sector=sector,
@@ -189,39 +222,27 @@ def add_holding():
         return instance
 
     new_holding = create_holding_instance()
-    
     try:
         db.session.add(new_holding)
         db.session.commit()
     except ProgrammingError as e:
         db.session.rollback()
-        # Check if the error is the specific one we can fix
         if 'column "sector" of relation "holding" does not exist' in str(e):
-            print("INFO: Detected missing 'sector' column on POST. Attempting migration.")
-            # Run the migration
             if add_sector_column_if_missing():
-                print("INFO: Migration successful. Retrying transaction with a new session.")
-                # The previous session is now stale because the schema changed.
-                # We must discard it and start a new one. db.session.remove() does this.
                 db.session.remove()
-                
-                # We need to re-create the object to attach it to the new session.
                 holding_to_retry = create_holding_instance()
-                
                 db.session.add(holding_to_retry)
                 db.session.commit()
-                # The original `new_holding` is now detached, so we use the retried one for the response
                 return jsonify(holding_to_retry.to_dict()), 201
             else:
-                # The migration failed, so we can't proceed.
-                return jsonify({"error": "Database schema is out of date and could not be automatically updated."}), 500
+                return jsonify({"error": "Database schema is out of date and could not be updated."}), 500
         else:
-            # It was a different database error, so re-raise it.
             raise e
-
     return jsonify(new_holding.to_dict()), 201
 
 @app.route('/api/portfolio/<int:holding_id>', methods=['DELETE'])
+@login_required
+@role_required('admin')
 def delete_holding(holding_id):
     holding = Holding.query.get(holding_id)
     if holding is None: return jsonify({"error": "Holding not found"}), 404
@@ -229,42 +250,40 @@ def delete_holding(holding_id):
     db.session.commit()
     return jsonify({"message": "Holding deleted successfully"})
 
-# Presentations
 @app.route('/api/presentations', methods=['GET'])
+@login_required
+@role_required('member')
 def get_presentations():
     presentations = Presentation.query.order_by(Presentation.id.desc()).all()
     return jsonify([p.to_dict() for p in presentations])
 
 @app.route('/api/presentations', methods=['POST'])
+@login_required
+@role_required('member')
 def add_presentation():
     data = request.get_json()
     if not all(k in data for k in ['title', 'url', 'ticker', 'action']):
         return jsonify({"error": "Missing required fields"}), 400
-    
-    new_presentation = Presentation(
-        title=data['title'], url=data['url'],
-        ticker=data['ticker'].upper(), action=data['action']
-    )
+    new_presentation = Presentation(title=data['title'], url=data['url'], ticker=data['ticker'].upper(), action=data['action'])
     db.session.add(new_presentation)
     db.session.commit()
     return jsonify(new_presentation.to_dict()), 201
 
 @app.route('/api/presentations/<int:presentation_id>/vote', methods=['POST'])
+@login_required
+@role_required('member')
 def vote_on_presentation(presentation_id):
     data = request.get_json()
     vote_type = data.get('voteType')
-    
     presentation = Presentation.query.get(presentation_id)
     if not presentation:
         return jsonify({"error": "Presentation not found"}), 404
-        
     if vote_type == 'for':
         presentation.votes_for += 1
     elif vote_type == 'against':
         presentation.votes_against += 1
     else:
         return jsonify({"error": "Invalid vote type"}), 400
-        
     db.session.commit()
     return jsonify(presentation.to_dict())
 
