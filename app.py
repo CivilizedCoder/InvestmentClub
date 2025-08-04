@@ -4,6 +4,8 @@ from flask_sqlalchemy import SQLAlchemy
 import yfinance as yf
 import pandas as pd
 import os
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import ProgrammingError
 
 # Initialize the SQLAlchemy database extension WITHOUT an app instance.
 db = SQLAlchemy()
@@ -76,33 +78,30 @@ class Presentation(db.Model):
 # Create the database tables within the application context
 with app.app_context():
     db.create_all()
-    
-    # FIX: More robust migration to add 'sector' column if it doesn't exist.
-    # This version uses SQLAlchemy's inspection tools and runs the DDL
-    # in autocommit mode, which is more reliable for schema changes.
-    try:
-        from sqlalchemy import inspect, text
-        inspector = inspect(db.engine)
-        columns = [c['name'] for c in inspector.get_columns('holding')]
-        if 'sector' not in columns:
-            print("Attempting to add 'sector' column to 'holding' table...")
-            with db.engine.connect() as connection:
-                connection.execute(text('ALTER TABLE holding ADD COLUMN sector VARCHAR(50)'))
-                # The commit is handled by autocommit mode if needed by the driver
-            print("Successfully added 'sector' column to 'holding' table.")
-    except Exception as e:
-        # This might fail for various reasons (e.g., permissions), but we don't
-        # want it to crash the app on startup. The error will reappear on API calls.
-        print(f"CRITICAL: Could not perform simple migration for 'sector' column: {e}")
-
 
 # Teardown function to ensure database sessions are closed after each request.
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db.session.remove()
 
-# --- HTML & API ROUTES ---
+# --- HELPER FUNCTION FOR MIGRATION ---
+def add_sector_column_if_missing():
+    """Checks for the 'sector' column and adds it if it's missing."""
+    try:
+        inspector = inspect(db.engine)
+        columns = [c['name'] for c in inspector.get_columns('holding')]
+        if 'sector' not in columns:
+            print("MIGRATION: 'sector' column not found in 'holding' table. Adding it now.")
+            # Use a raw connection with autocommit for the schema change
+            with db.engine.connect() as connection:
+                connection.execute(text('ALTER TABLE holding ADD COLUMN sector VARCHAR(50)'))
+            print("MIGRATION: Successfully added 'sector' column.")
+            return True
+    except Exception as e:
+        print(f"CRITICAL: Failed to execute migration for 'sector' column: {e}")
+    return False
 
+# --- HTML & API ROUTES ---
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -121,7 +120,7 @@ def get_quotes():
             quotes[ts] = {
                 'currentPrice': info.get('regularMarketPrice'),
                 'previousClose': info.get('previousClose'),
-                'sector': info.get('sector', 'N/A') # Also return sector
+                'sector': info.get('sector', 'N/A')
             }
         return jsonify(quotes)
     except Exception as e:
@@ -151,17 +150,25 @@ def get_stock_data(ticker_symbol):
 
 # --- DATABASE API ENDPOINTS ---
 
-# Holdings (used for Portfolio and Transactions)
 @app.route('/api/portfolio', methods=['GET'])
 def get_holdings():
-    holdings = Holding.query.all()
-    return jsonify([h.to_dict() for h in holdings])
+    try:
+        holdings = Holding.query.all()
+        return jsonify([h.to_dict() for h in holdings])
+    except ProgrammingError as e:
+        # If the 'sector' column doesn't exist, the query will fail.
+        # In this case, it's safe to assume the portfolio is empty.
+        if 'column "sector" of relation "holding" does not exist' in str(e):
+            print("INFO: 'sector' column not found on GET. Returning empty portfolio.")
+            return jsonify([])
+        else:
+            # Re-raise other programming errors
+            raise e
 
 @app.route('/api/portfolio', methods=['POST'])
 def add_holding():
     data = request.get_json()
     
-    # Fetch sector info from yfinance
     try:
         stock_info = yf.Ticker(data['symbol']).info
         sector = stock_info.get('sector', 'Other')
@@ -171,23 +178,32 @@ def add_holding():
         long_name = data['longName']
 
     new_holding = Holding(
-        symbol=data['symbol'],
-        long_name=long_name,
-        sector=sector,
-        is_real=data['isReal'],
-        purchase_type=data.get('purchaseType'),
-        quantity=data.get('quantity'),
-        price=data.get('price'),
-        dollar_value=data.get('dollarValue'),
-        date=data.get('date')
+        symbol=data['symbol'], long_name=long_name, sector=sector,
+        is_real=data['isReal'], purchase_type=data.get('purchaseType'),
+        quantity=data.get('quantity'), price=data.get('price'),
+        dollar_value=data.get('dollarValue'), date=data.get('date')
     )
 
-    # If purchase is by value, calculate quantity
     if data.get('purchaseType') == 'value' and data.get('price') and data['price'] > 0:
         new_holding.quantity = data['dollarValue'] / data['price']
+    
+    try:
+        db.session.add(new_holding)
+        db.session.commit()
+    except ProgrammingError as e:
+        db.session.rollback()
+        if 'column "sector" of relation "holding" does not exist' in str(e):
+            print("INFO: Detected missing 'sector' column on POST. Attempting migration.")
+            if add_sector_column_if_missing():
+                # Retry the operation after migration
+                print("INFO: Migration successful. Retrying transaction.")
+                db.session.add(new_holding)
+                db.session.commit()
+            else:
+                return jsonify({"error": "Database schema is out of date and could not be automatically updated. Please contact an administrator."}), 500
+        else:
+            raise e # Re-raise other programming errors
 
-    db.session.add(new_holding)
-    db.session.commit()
     return jsonify(new_holding.to_dict()), 201
 
 @app.route('/api/portfolio/<int:holding_id>', methods=['DELETE'])
@@ -211,10 +227,8 @@ def add_presentation():
         return jsonify({"error": "Missing required fields"}), 400
     
     new_presentation = Presentation(
-        title=data['title'],
-        url=data['url'],
-        ticker=data['ticker'].upper(),
-        action=data['action']
+        title=data['title'], url=data['url'],
+        ticker=data['ticker'].upper(), action=data['action']
     )
     db.session.add(new_presentation)
     db.session.commit()
@@ -223,7 +237,7 @@ def add_presentation():
 @app.route('/api/presentations/<int:presentation_id>/vote', methods=['POST'])
 def vote_on_presentation(presentation_id):
     data = request.get_json()
-    vote_type = data.get('voteType') # 'for' or 'against'
+    vote_type = data.get('voteType')
     
     presentation = Presentation.query.get(presentation_id)
     if not presentation:
