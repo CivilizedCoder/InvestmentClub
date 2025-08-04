@@ -45,9 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
                 
-                // FIX: Render content only when the tab is made active
                 if (tab === 'home') {
-                    // Reset the home view to show the summary, not a stale search
                     const homeDashboard = document.getElementById('homeDashboard');
                     const stockDataView = document.getElementById('stockDataView');
                     if (homeDashboard) homeDashboard.classList.remove('hidden');
@@ -60,7 +58,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
-        // Trigger a click on the default active tab to load its content
         document.querySelector('.nav-link.active').click();
     }
     
@@ -80,26 +77,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStockData = data;
                 if (homeDashboard) homeDashboard.classList.add('hidden');
                 
-                // Inject the detailed stock view HTML if it doesn't exist
-                if (stockDataView && stockDataView.innerHTML.trim() === '') {
+                // FIX: Always recreate the stock view to ensure a clean state
+                if (stockDataView) {
+                    // Populate the view with the HTML structure
                     stockDataView.innerHTML = getStockDataViewHtml();
-                    // Re-initialize listeners for the newly added elements
+                    
+                    // Make the view visible
+                    stockDataView.classList.remove('hidden');
+                    
+                    // Populate the new elements with data
+                    updateStockInfoUI(data);
+                    setupIndividualStockChart(data.historical);
+                    
+                    // Add event listeners to the new elements
                     document.getElementById('isRealCheckbox').addEventListener('change', toggleRealPurchaseInputs);
                     document.getElementById('addToPortfolioBtn').addEventListener('click', addStockToPortfolio);
                     document.querySelectorAll('input[name="purchaseType"]').forEach(radio => radio.addEventListener('change', togglePurchaseTypeInputs));
+                    const portfolioTicker = document.getElementById('portfolioTicker');
+                    if (portfolioTicker) portfolioTicker.textContent = data.symbol;
                 }
-                
-                if (stockDataView) stockDataView.classList.remove('hidden');
-                
-                updateStockInfoUI(data);
-                setupIndividualStockChart(data.historical);
-                const portfolioTicker = document.getElementById('portfolioTicker');
-                if (portfolioTicker) portfolioTicker.textContent = data.symbol;
             })
             .catch(error => {
                 if (homeDashboard) {
                     homeDashboard.innerHTML = `<p class="text-red-400 text-center card">Error: ${error.message}</p>`;
                     homeDashboard.classList.remove('hidden');
+                    // Ensure the stock view is hidden on error
+                    if (stockDataView) stockDataView.classList.add('hidden');
                 }
             });
     }
@@ -325,6 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return Math.max(0, Math.min(data.length - 1, index));
         };
         canvas.addEventListener('mousedown', (e) => {
+            if (!timeline.getDatasetMeta(0).data.length) return;
             const x = e.offsetX;
             const meta = timeline.getDatasetMeta(0);
             const { startIndex, endIndex } = timeline.options.plugins.brush;
@@ -368,7 +372,6 @@ document.addEventListener('DOMContentLoaded', () => {
         mainChart.data.datasets[0].data = slicedData;
         mainChart.update('none');
         
-        // FIX: Add a check to prevent error on empty labels and get element safely
         const dateRangeDisplay = document.getElementById('dateRangeDisplay');
         if (dateRangeDisplay) {
             if (slicedLabels && slicedLabels.length > 0) {
@@ -493,8 +496,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const brushPlugin = {
             id: 'brush',
             afterDraw: (chart) => {
-                const { ctx, chartArea: { left, top, right, bottom } } = chart;
                 if (!chart.getDatasetMeta(0).data.length) return;
+                const { ctx, chartArea: { left, top, right, bottom } } = chart;
                 const { startIndex, endIndex } = chart.options.plugins.brush;
                 const startX = chart.getDatasetMeta(0).data[startIndex].x;
                 const endX = chart.getDatasetMeta(0).data[endIndex].x;
