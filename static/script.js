@@ -7,12 +7,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let recentSearches = [];
     const MAX_RECENT_SEARCHES = 5;
     let holdingToDeleteId = null;
+    let currentUserRole = 'guest'; // 'guest', 'member', or 'admin'
 
     // --- INITIALIZATION ---
     async function initialize() {
         initializeEventListeners();
         await fetchPortfolio();
-        renderPortfolioSummary();
+        updateUIVisibility();
         activateTab('home');
     }
 
@@ -70,7 +71,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
+
+        document.getElementById('userRoleSelector').addEventListener('click', (e) => {
+            if (e.target.matches('.role-btn')) {
+                const newRole = e.target.dataset.role;
+                setCurrentUserRole(newRole);
+            }
+        });
     }
+
+    // --- USER PERMISSIONS ---
+    function setCurrentUserRole(role) {
+        currentUserRole = role;
+        document.querySelectorAll('.role-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.role === role);
+        });
+        updateUIVisibility();
+    }
+
+    function updateUIVisibility() {
+        const guestTabs = ['home', 'search', 'internships', 'about'];
+        const memberTabs = [...guestTabs, 'portfolio', 'transactions', 'presentations'];
+        const adminTabs = [...memberTabs, 'admin'];
+
+        let visibleTabs;
+        switch (currentUserRole) {
+            case 'member': visibleTabs = memberTabs; break;
+            case 'admin': visibleTabs = adminTabs; break;
+            default: visibleTabs = guestTabs; // guest
+        }
+
+        // Show/hide nav links
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.style.display = visibleTabs.includes(link.dataset.tab) ? 'block' : 'none';
+        });
+
+        // If current tab is now hidden, switch to home
+        const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
+        if (!visibleTabs.includes(activeTab)) {
+            activateTab('home');
+        }
+
+        // Update specific UI elements
+        renderSearchTab(currentStockData); // Re-render to show/hide add form
+        renderPresentations(); // Re-render to show/hide submission form
+        renderPortfolioDashboard(); // Re-render to show/hide admin controls like delete
+        renderTransactionHistory(); // Re-render to show/hide admin controls
+    }
+
 
     // --- NAVIGATION & TAB CONTROL ---
     function activateTab(tab) {
@@ -85,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         switch (tab) {
             case 'home': renderPortfolioSummary(); break;
-            case 'search': renderSearchTab(); break;
+            case 'search': renderSearchTab(currentStockData); break;
             case 'portfolio': renderPortfolioDashboard(); break;
             case 'transactions': renderTransactionHistory(); break;
             case 'presentations': renderPresentations(); break;
@@ -143,6 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         if (isReal) {
+            if (currentUserRole !== 'admin') {
+                alert("Only admins can add real transactions.");
+                return;
+            }
             const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
             newHolding.purchaseType = purchaseType;
             newHolding.date = document.getElementById('purchaseDate').value;
@@ -163,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                newHolding.price = purchasePrice; // Set the price from user input
+                newHolding.price = purchasePrice;
 
                 if (purchasePrice > 0) {
                     newHolding.quantity = newHolding.dollarValue / purchasePrice;
@@ -185,6 +237,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function promptForDelete(id) {
+        if (currentUserRole !== 'admin') {
+            alert("Only admins can delete holdings.");
+            return;
+        }
         holdingToDeleteId = id;
         showConfirmationModal();
     }
@@ -270,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
                 </div>
-                ${getAddToPortfolioHtml(info.symbol)}
+                ${currentUserRole !== 'guest' ? getAddToPortfolioHtml(info.symbol) : ''}
                 <div class="space-y-4 mt-6">
                     ${createCollapsibleSection('Key Statistics', statsContent)}
                     ${createCollapsibleSection('Valuation Ratios', ratiosContent)}
@@ -304,26 +360,27 @@ document.addEventListener('DOMContentLoaded', () => {
             searchContent.querySelector('.timeframe-btn[data-range="1Y"]')?.classList.add('active');
             updateChartByRange(data.historical, '1Y');
 
-            // Add to portfolio form listeners
-            const isRealCheckbox = document.getElementById('isRealCheckbox');
-            const realPurchaseInputs = document.getElementById('realPurchaseInputs');
-            const addToPortfolioBtn = document.getElementById('addToPortfolioBtn');
-            const valueInputs = document.getElementById('valueInputs');
-            const quantityInputs = document.getElementById('quantityInputs');
+            if (currentUserRole !== 'guest') {
+                const isRealCheckbox = document.getElementById('isRealCheckbox');
+                const realPurchaseInputs = document.getElementById('realPurchaseInputs');
+                const addToPortfolioBtn = document.getElementById('addToPortfolioBtn');
+                const valueInputs = document.getElementById('valueInputs');
+                const quantityInputs = document.getElementById('quantityInputs');
 
-            isRealCheckbox.addEventListener('change', () => {
-                realPurchaseInputs.classList.toggle('hidden', !isRealCheckbox.checked);
-                addToPortfolioBtn.textContent = isRealCheckbox.checked ? 'Add Transaction' : 'Add to Watchlist';
-            });
-
-            document.querySelectorAll('input[name="purchaseType"]').forEach(radio => {
-                radio.addEventListener('change', () => {
-                    const isQuantity = radio.value === 'quantity';
-                    quantityInputs.classList.toggle('hidden', !isQuantity);
-                    valueInputs.classList.toggle('hidden', isQuantity);
+                isRealCheckbox.addEventListener('change', () => {
+                    realPurchaseInputs.classList.toggle('hidden', !isRealCheckbox.checked);
+                    addToPortfolioBtn.textContent = isRealCheckbox.checked ? 'Add Transaction' : 'Add to Watchlist';
                 });
-            });
-            addToPortfolioBtn.addEventListener('click', addStockToPortfolio);
+
+                document.querySelectorAll('input[name="purchaseType"]').forEach(radio => {
+                    radio.addEventListener('change', () => {
+                        const isQuantity = radio.value === 'quantity';
+                        quantityInputs.classList.toggle('hidden', !isQuantity);
+                        valueInputs.classList.toggle('hidden', isQuantity);
+                    });
+                });
+                addToPortfolioBtn.addEventListener('click', addStockToPortfolio);
+            }
         }
     
         searchContent.querySelectorAll('.recent-search-link').forEach(link => {
@@ -510,6 +567,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderPresentations() {
         const listEl = document.getElementById('presentationList');
+        const submitCard = document.getElementById('submitPresentationCard');
+
+        if (currentUserRole === 'guest') {
+            submitCard.style.display = 'none';
+        } else {
+            submitCard.style.display = 'block';
+        }
+
         if (!listEl) return;
         listEl.innerHTML = '<p class="card">Loading presentations...</p>';
         try {
@@ -656,6 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initializeDragAndDrop() {
+        if (currentUserRole !== 'admin') return;
         const holdingLists = document.querySelectorAll('.holding-list');
         holdingLists.forEach(list => {
             new Sortable(list, {
