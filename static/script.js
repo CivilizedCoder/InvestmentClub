@@ -382,12 +382,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createOwnershipTable(ownership) {
-        if (!ownership || (!ownership.major_holders && !ownership.institutional_holders)) return '<p class="text-gray-500">Ownership data not available.</p>';
+        if (!ownership || (!ownership.major_holders && !ownership.institutional_holders)) {
+            return '<p class="text-gray-500">Ownership data not available.</p>';
+        }
         let html = '';
         if (ownership.major_holders && ownership.major_holders.length > 0) {
             html += '<h4>Major Holders</h4><ul class="list-disc pl-5 mb-4">';
             ownership.major_holders.forEach(holder => {
-                html += `<li>${holder[0]}: ${holder[1]}</li>`;
+                // The data is an array of objects with keys '0' and '1'.
+                html += `<li>${holder['1']}: ${holder['0']}</li>`;
             });
             html += '</ul>';
         }
@@ -398,18 +401,22 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             html += '</ul>';
         }
-        return html;
+        return html || '<p class="text-gray-500">Ownership data not available.</p>';
     }
 
     function createNewsList(news) {
-        if (!news || news.length === 0) return '<p class="text-gray-500">No recent news.</p>';
+        if (!news || news.length === 0) {
+            return '<p class="text-gray-500">No recent news.</p>';
+        }
         let html = '<ul class="space-y-4">';
         news.slice(0, 5).forEach(item => {
-            html += `
-                <li class="border-b border-gray-700 pb-2">
-                    <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="font-semibold hover:text-cyan-400">${item.title}</a>
-                    <p class="text-sm text-gray-400">${item.publisher}</p>
-                </li>`;
+            if (item.title && item.link) { // Ensure essential data exists
+                html += `
+                    <li class="border-b border-gray-700 pb-2">
+                        <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="font-semibold hover:text-cyan-400">${item.title}</a>
+                        <p class="text-sm text-gray-400">${item.publisher || 'No publisher listed'}</p>
+                    </li>`;
+            }
         });
         html += '</ul>';
         return html;
