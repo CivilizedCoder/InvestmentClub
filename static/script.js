@@ -410,7 +410,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderPresentations() {
         const listEl = document.getElementById('presentationList');
-        // ... (implementation unchanged)
+        if (!listEl) return;
+        listEl.innerHTML = '<p class="card">Loading presentations...</p>';
+        try {
+            const response = await fetch('/api/presentations');
+            const presentations = await response.json();
+            listEl.innerHTML = '';
+            if (presentations.length === 0) {
+                listEl.innerHTML = '<p class="card text-gray-500">No presentations have been submitted yet.</p>';
+                return;
+            }
+            presentations.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                const actionColor = p.action === 'Buy' ? 'text-green-400' : 'text-red-400';
+                const voteButtons = `<button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button><button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>`;
+                card.innerHTML = `<h4 class="text-xl font-bold">${p.title}</h4><p class="text-sm text-gray-400 mb-3">Proposing to <span class="font-bold ${actionColor}">${p.action} ${p.ticker}</span></p><a href="${p.url}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline mb-4 block">View Presentation</a><div class="flex items-center justify-end space-x-4">${voteButtons}</div>`;
+                listEl.appendChild(card);
+            });
+            listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));
+        } catch (error) {
+            listEl.innerHTML = '<p class="card text-red-400">Could not load presentations.</p>';
+        }
     }
 
     async function renderPortfolioDashboard(newSectionName = null) {
@@ -541,6 +562,37 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- UI HELPERS & MODAL ---
     function showConfirmationModal() { document.getElementById('confirmationModal')?.classList.remove('hidden'); }
     function hideConfirmationModal() { document.getElementById('confirmationModal')?.classList.add('hidden'); }
+
+    // --- PRESENTATION HANDLERS ---
+    async function handlePresentationSubmit(e) {
+        e.preventDefault();
+        const form = e.target;
+        const presentation = {
+            title: form.querySelector('#presentationTitle').value,
+            url: form.querySelector('#presentationUrl').value,
+            ticker: form.querySelector('#presentationTicker').value,
+            action: form.querySelector('input[name="presentationAction"]:checked').value
+        };
+        const response = await fetch('/api/presentations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(presentation) });
+        if (response.ok) {
+            form.reset();
+            renderPresentations();
+        } else {
+            alert('Failed to submit presentation.');
+        }
+    }
+
+    async function handleVote(e) {
+        const button = e.currentTarget;
+        const id = button.dataset.id;
+        const voteType = button.dataset.type;
+        const response = await fetch(`/api/presentations/${id}/vote`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voteType }) });
+        if (response.ok) {
+            renderPresentations();
+        } else {
+            alert('Failed to record vote.');
+        }
+    }
 
     // --- CHARTING ---
     function setupIndividualStockChart(historicalData) {
