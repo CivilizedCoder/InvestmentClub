@@ -6,6 +6,7 @@ import pandas as pd
 import os
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import ProgrammingError
+import math
 
 # Initialize the SQLAlchemy database extension WITHOUT an app instance.
 db = SQLAlchemy()
@@ -87,7 +88,7 @@ with app.app_context():
 def shutdown_session(exception=None):
     db.session.remove()
 
-# --- HELPER FUNCTION FOR MIGRATION ---
+# --- HELPER FUNCTIONS ---
 def add_columns_if_missing():
     """Checks for and adds missing columns to the holding table."""
     try:
@@ -108,6 +109,16 @@ def add_columns_if_missing():
     except Exception as e:
         print(f"CRITICAL: Failed to execute migration: {e}")
     return False
+
+def clean_nan(obj):
+    """Recursively replace NaN with None in a dictionary or list for JSON compatibility."""
+    if isinstance(obj, dict):
+        return {k: clean_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan(i) for i in obj]
+    elif isinstance(obj, float) and math.isnan(obj):
+        return None
+    return obj
 
 # --- HTML & API ROUTES ---
 @app.route('/')
@@ -200,9 +211,14 @@ def get_stock_data(ticker_symbol):
             },
             'historical': hist[['Date', 'Close']].to_dict('records')
         }
-        return jsonify(data)
+        
+        # Clean data to remove NaN values before returning JSON
+        cleaned_data = clean_nan(data)
+        return jsonify(cleaned_data)
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Error fetching data for {ticker_symbol}: {e}")
+        return jsonify({"error": f"An error occurred while fetching data for {ticker_symbol}. See server logs."}), 500
 
 # --- DATABASE API ENDPOINTS ---
 
