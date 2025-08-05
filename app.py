@@ -50,13 +50,16 @@ class Holding(db.Model):
     price = db.Column(db.Float) # Price per share at purchase
     dollar_value = db.Column(db.Float) # Total cost at purchase
     date = db.Column(db.String(20))
+    custom_section = db.Column(db.String(100), nullable=True, default='Default')
+
 
     def to_dict(self):
         return {
             'id': self.id, 'symbol': self.symbol, 'longName': self.long_name,
             'sector': self.sector, 'isReal': self.is_real, 
             'purchaseType': self.purchase_type, 'quantity': self.quantity, 
-            'price': self.price, 'dollarValue': self.dollar_value, 'date': self.date
+            'price': self.price, 'dollarValue': self.dollar_value, 'date': self.date,
+            'customSection': self.custom_section
         }
 
 class Presentation(db.Model):
@@ -85,19 +88,25 @@ def shutdown_session(exception=None):
     db.session.remove()
 
 # --- HELPER FUNCTION FOR MIGRATION ---
-def add_sector_column_if_missing():
-    """Checks for the 'sector' column and adds it if it's missing, using an autocommit connection."""
+def add_columns_if_missing():
+    """Checks for and adds missing columns to the holding table."""
     try:
         inspector = inspect(db.engine)
         columns = [c['name'] for c in inspector.get_columns('holding')]
-        if 'sector' not in columns:
-            print("MIGRATION: 'sector' column not found. Adding it now.")
-            with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        
+        with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            if 'sector' not in columns:
+                print("MIGRATION: 'sector' column not found. Adding it now.")
                 connection.execute(text('ALTER TABLE holding ADD COLUMN sector VARCHAR(50)'))
-            print("MIGRATION: Successfully added 'sector' column.")
-            return True
+                print("MIGRATION: Successfully added 'sector' column.")
+
+            if 'custom_section' not in columns:
+                print("MIGRATION: 'custom_section' column not found. Adding it now.")
+                connection.execute(text("ALTER TABLE holding ADD COLUMN custom_section VARCHAR(100) DEFAULT 'Default'"))
+                print("MIGRATION: Successfully added 'custom_section' column.")
+        return True
     except Exception as e:
-        print(f"CRITICAL: Failed to execute migration for 'sector' column: {e}")
+        print(f"CRITICAL: Failed to execute migration: {e}")
     return False
 
 # --- HTML & API ROUTES ---
@@ -125,22 +134,68 @@ def get_quotes():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def format_financial_data(df):
+    if df is None or df.empty:
+        return None
+    df.index = df.index.strftime('%Y-%m-%d')
+    return df.transpose().to_dict()
+
 @app.route('/api/stock/<ticker_symbol>')
 def get_stock_data(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
         info = stock.info
+        
         if not info or 'regularMarketPrice' not in info or info.get('regularMarketPrice') is None:
             return jsonify({"error": "Invalid ticker or data not available"}), 404
+        
         hist = stock.history(period="max").reset_index()
         hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
+        
         data = {
-            'symbol': info.get('symbol'), 'longName': info.get('longName'),
-            'sector': info.get('sector', 'Other'),
-            'currentPrice': info.get('regularMarketPrice'), 'dayHigh': info.get('dayHigh'),
-            'dayLow': info.get('dayLow'), 'marketCap': info.get('marketCap'),
-            'volume': info.get('volume'), 'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
-            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow'), 'forwardPE': info.get('forwardPE'),
+            'info': {
+                'symbol': info.get('symbol'), 'longName': info.get('longName'),
+                'sector': info.get('sector', 'Other'), 'industry': info.get('industry'),
+                'longBusinessSummary': info.get('longBusinessSummary'),
+                'fullTimeEmployees': info.get('fullTimeEmployees'),
+                'city': info.get('city'), 'state': info.get('state'), 'country': info.get('country'),
+                'website': info.get('website'),
+            },
+            'market_data': {
+                'currentPrice': info.get('regularMarketPrice'), 'dayHigh': info.get('dayHigh'),
+                'dayLow': info.get('dayLow'), 'marketCap': info.get('marketCap'),
+                'volume': info.get('volume'), 'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
+                'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow'), 'fiftyDayAverage': info.get('fiftyDayAverage'),
+                'twoHundredDayAverage': info.get('twoHundredDayAverage'),
+            },
+            'valuation_ratios': {
+                'trailingPE': info.get('trailingPE'), 'forwardPE': info.get('forwardPE'),
+                'priceToBook': info.get('priceToBook'), 'priceToSales': info.get('priceToSalesTrailing12Months'),
+                'pegRatio': info.get('pegRatio'), 'enterpriseToEbitda': info.get('enterpriseToEbitda'),
+            },
+            'profitability': {
+                'profitMargins': info.get('profitMargins'), 'returnOnAssets': info.get('returnOnAssets'),
+                'returnOnEquity': info.get('returnOnEquity'),
+            },
+            'dividends_splits': {
+                'dividendRate': info.get('dividendRate'), 'dividendYield': info.get('dividendYield'),
+                'exDividendDate': pd.to_datetime(info.get('exDividendDate'), unit='s').strftime('%Y-%m-%d') if info.get('exDividendDate') else None,
+                'payoutRatio': info.get('payoutRatio'), 'lastSplitFactor': info.get('lastSplitFactor'),
+                'lastSplitDate': pd.to_datetime(info.get('lastSplitDate'), unit='s').strftime('%Y-%m-%d') if info.get('lastSplitDate') else None,
+            },
+            'analyst_info': {
+                'recommendationKey': info.get('recommendationKey'), 'targetMeanPrice': info.get('targetMeanPrice'),
+                'targetHighPrice': info.get('targetHighPrice'), 'targetLowPrice': info.get('targetLowPrice'),
+                'numberOfAnalystOpinions': info.get('numberOfAnalystOpinions'),
+            },
+            'financials': {
+                'income_statement_annual': format_financial_data(stock.financials),
+                'income_statement_quarterly': format_financial_data(stock.quarterly_financials),
+                'balance_sheet_annual': format_financial_data(stock.balance_sheet),
+                'balance_sheet_quarterly': format_financial_data(stock.quarterly_balance_sheet),
+                'cash_flow_annual': format_financial_data(stock.cashflow),
+                'cash_flow_quarterly': format_financial_data(stock.quarterly_cashflow),
+            },
             'historical': hist[['Date', 'Close']].to_dict('records')
         }
         return jsonify(data)
@@ -154,15 +209,10 @@ def get_holdings():
     try:
         holdings = Holding.query.all()
         return jsonify([h.to_dict() for h in holdings])
-    except ProgrammingError as e:
-        if 'column "sector" of relation "holding" does not exist' in str(e):
-            print("INFO: Detected missing 'sector' column on GET. Attempting migration.")
-            add_sector_column_if_missing()
-            # After migration, the portfolio is guaranteed to be empty.
-            return jsonify([])
-        else:
-            # Re-raise other programming errors
-            raise e
+    except ProgrammingError:
+        add_columns_if_missing()
+        return jsonify([])
+
 
 @app.route('/api/portfolio', methods=['POST'])
 def add_holding():
@@ -176,13 +226,13 @@ def add_holding():
         sector = 'Other'
         long_name = data['longName']
 
-    # Define a function to create the object so we can re-create it after a failed transaction.
     def create_holding_instance():
         instance = Holding(
             symbol=data['symbol'], long_name=long_name, sector=sector,
             is_real=data['isReal'], purchase_type=data.get('purchaseType'),
             quantity=data.get('quantity'), price=data.get('price'),
-            dollar_value=data.get('dollarValue'), date=data.get('date')
+            dollar_value=data.get('dollarValue'), date=data.get('date'),
+            custom_section=data.get('customSection', sector or 'Default')
         )
         if data.get('purchaseType') == 'value' and data.get('price') and data['price'] > 0:
             instance.quantity = data['dollarValue'] / data['price']
@@ -193,31 +243,16 @@ def add_holding():
     try:
         db.session.add(new_holding)
         db.session.commit()
-    except ProgrammingError as e:
+    except ProgrammingError:
         db.session.rollback()
-        # Check if the error is the specific one we can fix
-        if 'column "sector" of relation "holding" does not exist' in str(e):
-            print("INFO: Detected missing 'sector' column on POST. Attempting migration.")
-            # Run the migration
-            if add_sector_column_if_missing():
-                print("INFO: Migration successful. Retrying transaction with a new session.")
-                # The previous session is now stale because the schema changed.
-                # We must discard it and start a new one. db.session.remove() does this.
-                db.session.remove()
-                
-                # We need to re-create the object to attach it to the new session.
-                holding_to_retry = create_holding_instance()
-                
-                db.session.add(holding_to_retry)
-                db.session.commit()
-                # The original `new_holding` is now detached, so we use the retried one for the response
-                return jsonify(holding_to_retry.to_dict()), 201
-            else:
-                # The migration failed, so we can't proceed.
-                return jsonify({"error": "Database schema is out of date and could not be automatically updated."}), 500
+        if add_columns_if_missing():
+            db.session.remove()
+            holding_to_retry = create_holding_instance()
+            db.session.add(holding_to_retry)
+            db.session.commit()
+            return jsonify(holding_to_retry.to_dict()), 201
         else:
-            # It was a different database error, so re-raise it.
-            raise e
+            return jsonify({"error": "Database schema is out of date and could not be automatically updated."}), 500
 
     return jsonify(new_holding.to_dict()), 201
 
@@ -228,6 +263,20 @@ def delete_holding(holding_id):
     db.session.delete(holding)
     db.session.commit()
     return jsonify({"message": "Holding deleted successfully"})
+
+@app.route('/api/portfolio/section', methods=['POST'])
+def update_holding_section():
+    data = request.get_json()
+    holding_id = data.get('id')
+    new_section = data.get('section')
+    
+    holding = Holding.query.get(holding_id)
+    if not holding:
+        return jsonify({"error": "Holding not found"}), 404
+        
+    holding.custom_section = new_section
+    db.session.commit()
+    return jsonify(holding.to_dict())
 
 # Presentations
 @app.route('/api/presentations', methods=['GET'])
