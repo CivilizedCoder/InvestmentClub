@@ -312,8 +312,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             const grid = grids[pageName];
             grid.removeAll();
-            if (data.content && Array.isArray(data.content)) {
-                data.content.forEach(item => {
+            
+            const contentData = JSON.parse(data.content);
+
+            if (contentData && Array.isArray(contentData)) {
+                contentData.forEach(item => {
                     grid.addWidget({
                         x: item.x, y: item.y, w: item.w, h: item.h,
                         content: item.content
@@ -321,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
         } catch (error) {
-            console.error(`Error fetching ${pageName} content:`, error);
+            console.error(`Error fetching or parsing ${pageName} content:`, error);
         }
     }
 
@@ -344,8 +347,10 @@ document.addEventListener('DOMContentLoaded', () => {
             addCardBtn.classList.add('hidden');
 
             const savedData = grid.save().map(item => {
-                const el = item.el.querySelector('.grid-stack-item-content');
-                return { x: item.x, y: item.y, w: item.w, h: item.h, content: el.innerHTML };
+                return { 
+                    x: item.x, y: item.y, w: item.w, h: item.h, 
+                    content: item.el.querySelector('.grid-stack-item-content').innerHTML 
+                };
             });
 
             await fetch(`/api/page/${pageName}`, {
@@ -361,13 +366,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const textContent = prompt("Please enter the text content for the card:");
         if (textContent === null) return;
 
-        let cardHtml = '<div class="grid-stack-item-content">';
+        let cardInnerHtml = '';
         if (imageUrl) {
-            cardHtml += `<img src="${imageUrl}" class="content-card-image" alt="User content">`;
+            cardInnerHtml += `<img src="${imageUrl}" class="content-card-image" alt="User content">`;
         }
-        cardHtml += `<div class="content-card-text">${textContent}</div></div>`;
+        cardInnerHtml += `<div class="content-card-text">${textContent}</div>`;
 
-        grids[pageName].addWidget({ w: 4, h: 4, content: cardHtml });
+        grids[pageName].addWidget({ w: 4, h: 4, content: cardInnerHtml });
     }
 
     // --- RENDER FUNCTIONS ---

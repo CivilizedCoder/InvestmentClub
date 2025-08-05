@@ -346,7 +346,8 @@ body {
 
 /* --- EDITABLE CONTENT & GRIDSTACK --- */
 .grid-stack {
-    background: #111827; /* gray-900 */
+    background: #1F2937; /* gray-800 */
+    border-radius: 0.5rem;
 }
 
 .grid-stack-item-content {
@@ -354,6 +355,8 @@ body {
     border-radius: 0.5rem;
     overflow: hidden;
     color: #D1D5DB;
+    display: flex;
+    flex-direction: column;
 }
 
 .grid-stack-item-content .content-card-image {
@@ -364,11 +367,18 @@ body {
 
 .grid-stack-item-content .content-card-text {
     padding: 1rem;
+    flex-grow: 1;
 }
 
 .grid-stack-item .ui-resizable-handle {
-    filter: invert(1);
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"><path d="M14 0 L0 14 L14 14 Z" fill="rgba(255,255,255,0.5)"/></svg>');
+    background-position: bottom right;
+    padding: 0 3px 3px 0;
+    background-repeat: no-repeat;
+    background-origin: content-box;
+    box-sizing: border-box;
 }
+
 
 /* General class for a hidden element */
 .hidden {

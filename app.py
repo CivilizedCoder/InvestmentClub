@@ -7,6 +7,7 @@ import os
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import ProgrammingError
 import math
+import json
 
 # Initialize the SQLAlchemy database extension WITHOUT an app instance.
 db = SQLAlchemy()
@@ -370,23 +371,31 @@ def get_page_content(page_name):
     if content:
         return jsonify({'content': content.content})
     else:
-        # Provide default content if none exists in the DB
+        about_default = json.dumps([{
+            "x": 0, "y": 0, "w": 12, "h": 4,
+            "content": '<h3>Welcome!</h3><p>This is a dashboard for the Muskingum University Investment Club.</p>'
+        }])
+        internships_default = json.dumps([{
+            "x": 0, "y": 0, "w": 12, "h": 4,
+            "content": '<p>This section will list relevant internship opportunities. Check back later for updates.</p>'
+        }])
         default_content = {
-            'about': '<h3 class="text-xl font-semibold mb-4 text-cyan-400">Welcome!</h3><p>This is a dashboard for the Muskingum University Investment Club.</p>',
-            'internships': '<p>This section will list relevant internship opportunities. Check back later for updates.</p>'
+            'about': about_default,
+            'internships': internships_default
         }
-        return jsonify({'content': default_content.get(page_name, '<p>Content not found.</p>')})
+        return jsonify({'content': default_content.get(page_name, '[]')})
 
 @app.route('/api/page/<page_name>', methods=['POST'])
 def update_page_content(page_name):
     data = request.get_json()
-    new_content = data.get('content')
+    new_content_list = data.get('content')
+    new_content_str = json.dumps(new_content_list)
     
     page = PageContent.query.filter_by(page_name=page_name).first()
     if page:
-        page.content = new_content
+        page.content = new_content_str
     else:
-        page = PageContent(page_name=page_name, content=new_content)
+        page = PageContent(page_name=page_name, content=new_content_str)
         db.session.add(page)
         
     db.session.commit()
