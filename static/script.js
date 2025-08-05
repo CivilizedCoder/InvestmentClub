@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let portfolio = [];
     let recentSearches = [];
     const MAX_RECENT_SEARCHES = 5;
+    let holdingToDeleteId = null;
 
     // --- INITIALIZATION ---
     async function initialize() {
@@ -17,16 +18,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- EVENT LISTENERS ---
     function initializeEventListeners() {
+        // Main Actions
         document.getElementById('fetchBtn')?.addEventListener('click', executeSearch);
         document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && executeSearch());
         document.getElementById('presentationForm')?.addEventListener('submit', handlePresentationSubmit);
 
+        // Tab Navigation
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const tab = link.dataset.tab;
                 activateTab(tab);
             });
+        });
+
+        // Modal Buttons
+        document.getElementById('modalCancelBtn')?.addEventListener('click', () => hideConfirmationModal());
+        document.getElementById('modalConfirmBtn')?.addEventListener('click', () => confirmDelete());
+
+        // Delegated listener for delete buttons
+        document.querySelector('main').addEventListener('click', (e) => {
+            const deleteButton = e.target.closest('.delete-btn');
+            if (deleteButton) {
+                const id = parseInt(deleteButton.dataset.id, 10);
+                promptForDelete(id);
+            }
         });
     }
 
@@ -133,6 +149,41 @@ document.addEventListener('DOMContentLoaded', () => {
             alert("Failed to add holding.");
         }
     }
+
+    function promptForDelete(id) {
+        holdingToDeleteId = id;
+        showConfirmationModal();
+    }
+
+    async function confirmDelete() {
+        if (holdingToDeleteId === null) return;
+    
+        try {
+            const response = await fetch(`/api/portfolio/${holdingToDeleteId}`, { method: 'DELETE' });
+            if (response.ok) {
+                // Remove from local state
+                portfolio = portfolio.filter(h => h.id !== holdingToDeleteId);
+                
+                // Re-render the currently active tab to reflect the change
+                const currentTab = document.querySelector('.nav-link.active')?.dataset.tab;
+                if (currentTab === 'portfolio' || currentTab === 'transactions') {
+                    activateTab(currentTab);
+                } else {
+                    // If deleting from somewhere else, maybe just refresh portfolio summary
+                    renderPortfolioSummary();
+                }
+            } else {
+                const err = await response.json();
+                alert(`Failed to delete: ${err.error}`);
+            }
+        } catch (error) {
+            console.error("Error deleting holding:", error);
+            alert("An error occurred while trying to delete the holding.");
+        } finally {
+            hideConfirmationModal();
+            holdingToDeleteId = null;
+        }
+    }
     
     // --- RENDER FUNCTIONS FOR EACH TAB ---
     function renderSearchTab(data = null, error = null, isLoading = false) {
@@ -236,12 +287,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTransactionHistory() {
         const listEl = document.getElementById('transactionList');
+        // Only show real transactions, not watchlist items
+        const realTransactions = portfolio.filter(item => item.isReal);
+
         listEl.innerHTML = '';
-        if (portfolio.length === 0) {
-            listEl.innerHTML = '<tr><td colspan="7" class="text-center p-4 text-gray-500">No transactions yet.</td></tr>';
+        if (realTransactions.length === 0) {
+            listEl.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">No real transactions yet.</td></tr>';
             return;
         }
-        portfolio.forEach(item => {
+
+        realTransactions.forEach(item => {
             const row = document.createElement('tr');
             row.className = 'border-b border-gray-800 hover:bg-gray-800';
             
@@ -254,10 +309,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3">${item.date || 'N/A'}</td>
                 <td class="p-3 font-bold">${item.symbol}</td>
                 <td class="p-3">${item.longName}</td>
-                <td class="p-3">${item.isReal ? 'Buy' : 'Track'}</td>
+                <td class="p-3">Buy</td>
                 <td class="p-3 text-right">${purchaseDetail}</td>
                 <td class="p-3 text-right">${priceText}</td>
                 <td class="p-3 text-right font-semibold">${dollarValueText}</td>
+                <td class="p-3 text-center">
+                    <button class="delete-btn" data-id="${item.id}" title="Delete Transaction">
+                        <i class="fas fa-times-circle"></i>
+                    </button>
+                </td>
             `;
             listEl.appendChild(row);
         });
@@ -392,6 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <th class="p-2 text-right">Cost Basis</th>
                                 <th class="p-2 text-right">Market Value</th>
                                 <th class="p-2 text-right">Gain/Loss</th>
+                                <th class="p-2 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -407,6 +468,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <td class="p-2 text-right ${gainLossColor}">
                                             ${gainLoss >= 0 ? '+' : '-'}$${Math.abs(gainLoss).toFixed(2)}
                                         </td>
+                                        <td class="p-2 text-center">
+                                            <button class="delete-btn" data-id="${h.id}" title="Delete Holding">
+                                                <i class="fas fa-times-circle"></i>
+                                            </button>
+                                        </td>
                                     </tr>`;
                             }).join('')}
                         </tbody>
@@ -421,6 +487,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- UI HELPERS & EVENT HANDLERS ---
+    function showConfirmationModal() {
+        document.getElementById('confirmationModal')?.classList.remove('hidden');
+    }
+    function hideConfirmationModal() {
+        document.getElementById('confirmationModal')?.classList.add('hidden');
+    }
+
     function updateStockInfoUI(data) {
         const formatCurrency = (val) => val != null ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
         const formatLargeNumber = (val) => val != null ? Number(val).toLocaleString() : 'N/A';
