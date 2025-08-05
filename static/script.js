@@ -105,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch(`/api/stock/${ticker}`)
             .then(response => response.ok ? response.json() : response.json().then(err => { throw new Error(err.error) }))
             .then(data => {
+                console.log("Received data from server:", JSON.stringify(data, null, 2)); // Log the raw JSON
                 currentStockData = data;
                 renderSearchTab(data);
             })
@@ -147,13 +148,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert("Please fill in all purchase details."); return;
                 }
                 newHolding.dollarValue = newHolding.quantity * newHolding.price;
-            } else {
+            } else { // 'value'
                 newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
                 if (isNaN(newHolding.dollarValue) || !newHolding.date) {
-                    alert("Please fill in dollar value and date."); return;
+                    alert("Please fill in dollar value and date.");
+                    return;
                 }
-                if (newHolding.price > 0) {
-                    newHolding.quantity = newHolding.dollarValue / newHolding.price;
+
+                // Find the historical price for the purchase date
+                const historicalEntry = currentStockData.historical
+                    .slice() // Create a copy to avoid mutating original data
+                    .reverse() // Search backwards from the most recent date to find the closest date
+                    .find(d => d.Date <= newHolding.date);
+
+                if (!historicalEntry || typeof historicalEntry.Close === 'undefined') {
+                    alert("Could not find historical price data on or before the selected date. The stock may not have been trading then.");
+                    return;
+                }
+
+                const purchasePrice = historicalEntry.Close;
+                newHolding.price = purchasePrice; // Set the correct historical price
+
+                if (purchasePrice > 0) {
+                    newHolding.quantity = newHolding.dollarValue / purchasePrice;
                 } else {
                     newHolding.quantity = 0;
                 }
@@ -223,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (error) {
             contentHtml += `<div class="card"><p class="text-red-400 text-center">Error: ${error}</p></div>`;
         } else if (data) {
-            const { info, market_data, valuation_ratios, profitability, dividends_splits, analyst_info, ownership, news } = data;
+            const { info, market_data, valuation_ratios, news } = data;
             
             const statsContent = `
                 <div class="info-grid">
@@ -262,8 +279,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="space-y-4 mt-6">
                     ${createCollapsibleSection('Key Statistics', statsContent)}
                     ${createCollapsibleSection('Valuation Ratios', ratiosContent)}
-                    ${createCollapsibleSection('Ownership', createOwnershipTable(ownership))}
                     ${createCollapsibleSection('News', createNewsList(news))}
+                    ${createCollapsibleSection('Raw JSON Data (for Debugging)', `<pre class="text-xs whitespace-pre-wrap break-all">${JSON.stringify(data, null, 2)}</pre>`)}
                 </div>
             `;
         } else {
@@ -382,6 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createOwnershipTable(ownership) {
+        // This function is no longer called in renderSearchTab, but kept for potential future use.
         if (!ownership || (!ownership.major_holders && !ownership.institutional_holders)) {
             return '<p class="text-gray-500">Ownership data not available.</p>';
         }
@@ -389,7 +407,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ownership.major_holders && ownership.major_holders.length > 0) {
             html += '<h4>Major Holders</h4><ul class="list-disc pl-5 mb-4">';
             ownership.major_holders.forEach(holder => {
-                // The data is an array of objects with keys '0' and '1'.
                 html += `<li>${holder['1']}: ${holder['0']}</li>`;
             });
             html += '</ul>';
