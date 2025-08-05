@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (error) {
             contentHtml += `<div class="card"><p class="text-red-400 text-center">Error: ${error}</p></div>`;
         } else if (data) {
-            const { info, market_data, valuation_ratios, news } = data;
+            const { info, market_data, valuation_ratios, analyst_info, news } = data;
             
             const statsContent = `
                 <div class="info-grid">
@@ -279,6 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="space-y-4 mt-6">
                     ${createCollapsibleSection('Key Statistics', statsContent)}
                     ${createCollapsibleSection('Valuation Ratios', ratiosContent)}
+                    ${createCollapsibleSection('Analyst Ratings', createAnalystInfoHtml(analyst_info))}
                     ${createCollapsibleSection('News', createNewsList(news))}
                     ${createCollapsibleSection('Raw JSON Data (for Debugging)', `<pre class="text-xs whitespace-pre-wrap break-all">${JSON.stringify(data, null, 2)}</pre>`)}
                 </div>
@@ -398,27 +399,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<div class="info-item"><span class="info-label">${label}</span><span class="info-value">${value}</span></div>`;
     }
 
-    function createOwnershipTable(ownership) {
-        // This function is no longer called in renderSearchTab, but kept for potential future use.
-        if (!ownership || (!ownership.major_holders && !ownership.institutional_holders)) {
-            return '<p class="text-gray-500">Ownership data not available.</p>';
-        }
-        let html = '';
-        if (ownership.major_holders && ownership.major_holders.length > 0) {
-            html += '<h4>Major Holders</h4><ul class="list-disc pl-5 mb-4">';
-            ownership.major_holders.forEach(holder => {
-                html += `<li>${holder['1']}: ${holder['0']}</li>`;
-            });
-            html += '</ul>';
-        }
-        if (ownership.institutional_holders && ownership.institutional_holders.length > 0) {
-            html += '<h4>Top Institutional Holders</h4><ul class="list-disc pl-5">';
-            ownership.institutional_holders.slice(0, 5).forEach(holder => {
-                html += `<li>${holder['Holder']}</li>`;
-            });
-            html += '</ul>';
-        }
-        return html || '<p class="text-gray-500">Ownership data not available.</p>';
+    function createAnalystInfoHtml(analyst_info) {
+        if (!analyst_info) return '<p class="text-gray-500">Analyst data not available.</p>';
+        const formatCurrency = (val) => val != null ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
+        return `
+            <div class="info-grid">
+                ${createKpiItem('Recommendation', analyst_info.recommendationKey?.toUpperCase() || 'N/A')}
+                ${createKpiItem('Target High', formatCurrency(analyst_info.targetHighPrice))}
+                ${createKpiItem('Target Mean', formatCurrency(analyst_info.targetMeanPrice))}
+                ${createKpiItem('Target Low', formatCurrency(analyst_info.targetLowPrice))}
+                ${createKpiItem('# of Opinions', analyst_info.numberOfAnalystOpinions || 'N/A')}
+            </div>
+        `;
     }
 
     function createNewsList(news) {
