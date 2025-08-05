@@ -345,10 +345,38 @@ body {
 }
 
 /* --- EDITABLE CONTENT --- */
+.prose {
+    color: #D1D5DB;
+}
+.prose h1, .prose h2, .prose h3 {
+    color: #F9FAFB;
+}
+.prose a {
+    color: #22D3EE;
+}
+.prose img {
+    border-radius: 0.5rem;
+}
+
 [contenteditable="true"] {
     outline: 2px dashed #06B6D4;
     padding: 0.5rem;
     border-radius: 0.25rem;
+}
+
+.content-card {
+    background-color: #374151;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+}
+.content-card img {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+}
+.content-card-text {
+    padding: 1rem;
 }
 
 

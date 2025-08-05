@@ -84,6 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Edit/Save Listeners for Static Pages
         document.getElementById('editAboutBtn').addEventListener('click', () => toggleContentEditable('about'));
         document.getElementById('editInternshipsBtn').addEventListener('click', () => toggleContentEditable('internships'));
+        document.getElementById('addAboutCardBtn').addEventListener('click', () => addContentCard('about'));
+        document.getElementById('addInternshipsCardBtn').addEventListener('click', () => addContentCard('internships'));
     }
 
     // --- USER PERMISSIONS ---
@@ -302,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function toggleContentEditable(pageName) {
         const contentDiv = document.getElementById(`${pageName}PageContent`);
         const editBtn = document.getElementById(`edit${pageName.charAt(0).toUpperCase() + pageName.slice(1)}Btn`);
+        const addCardBtn = document.getElementById(`add${pageName.charAt(0).toUpperCase() + pageName.slice(1)}CardBtn`);
         const isEditable = contentDiv.isContentEditable;
 
         if (isEditable) {
@@ -310,6 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
             editBtn.textContent = 'Edit';
             editBtn.classList.remove('button-success');
             editBtn.classList.add('button-secondary');
+            addCardBtn.classList.add('hidden');
             
             await fetch(`/api/page/${pageName}`, {
                 method: 'POST',
@@ -322,8 +326,28 @@ document.addEventListener('DOMContentLoaded', () => {
             editBtn.textContent = 'Save';
             editBtn.classList.remove('button-secondary');
             editBtn.classList.add('button-success');
+            addCardBtn.classList.remove('hidden');
             contentDiv.focus();
         }
+    }
+
+    function addContentCard(pageName) {
+        const imageUrl = prompt("Please enter the URL for the image:");
+        if (!imageUrl) return;
+
+        const textContent = prompt("Please enter the text content for the card:");
+        if (textContent === null) return;
+
+        const cardHtml = `
+            <div class="content-card">
+                <img src="${imageUrl}" class="content-card-image" alt="User uploaded content">
+                <div class="content-card-text">
+                    <p>${textContent}</p>
+                </div>
+            </div>`;
+
+        const contentDiv = document.getElementById(`${pageName}PageContent`);
+        contentDiv.insertAdjacentHTML('beforeend', cardHtml);
     }
 
     // --- RENDER FUNCTIONS ---
