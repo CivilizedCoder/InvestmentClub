@@ -233,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="card mb-6">
                     <div class="flex space-x-2 mb-4">
-                        ${['1D', '5D', '1M', '3M', '6M', '1Y', '5Y', 'MAX'].map(t => `<button class="timeframe-btn" data-range="${t}">${t}</button>`).join('')}
+                        ${['5D', '1M', '3M', '6M', '1Y', '5Y', 'MAX'].map(t => `<button class="timeframe-btn" data-range="${t}">${t}</button>`).join('')}
                     </div>
                     <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
                 </div>
@@ -615,12 +615,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 }]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
                 scales: { 
                     x: { type: 'time', time: { unit: 'day' }, grid: { display: false } },
                     y: { grid: { color: 'rgba(255, 255, 255, 0.1)' } }
                 },
-                plugins: { legend: { display: false } }
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1F2937',
+                        titleColor: '#E5E7EB',
+                        bodyColor: '#E5E7EB',
+                        borderColor: '#374151',
+                        borderWidth: 1,
+                        padding: 10,
+                        displayColors: false,
+                        callbacks: {
+                            title: function(context) {
+                                const date = new Date(context[0].parsed.x);
+                                return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                            },
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
             }
         });
     }
@@ -632,7 +664,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let startDate = new Date();
         
         switch (range) {
-            case '1D': startDate.setDate(now.getDate() - 1); break;
             case '5D': startDate.setDate(now.getDate() - 5); break;
             case '1M': startDate.setMonth(now.getMonth() - 1); break;
             case '3M': startDate.setMonth(now.getMonth() - 3); break;

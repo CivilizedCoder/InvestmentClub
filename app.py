@@ -135,9 +135,11 @@ def get_quotes():
         return jsonify({"error": str(e)}), 500
 
 def format_financial_data(df):
+    """Formats financial dataframes from yfinance, where columns are dates."""
     if df is None or df.empty:
         return None
-    df.index = df.index.strftime('%Y-%m-%d')
+    # The columns are Timestamps, not the index. Format them.
+    df.columns = df.columns.strftime('%Y-%m-%d')
     return df.transpose().to_dict()
 
 @app.route('/api/stock/<ticker_symbol>')
