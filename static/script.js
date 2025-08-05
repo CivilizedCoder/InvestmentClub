@@ -290,7 +290,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const card = document.createElement('div');
                 card.className = 'summary-card';
-                card.innerHTML = `<div class="flex justify-between items-center"><p class="font-bold text-lg">${holding.symbol}</p><p class="font-semibold text-lg">${currentPrice != null ? '$' + currentPrice.toFixed(2) : 'N/A'}</p></div><p class="text-sm text-gray-400 truncate">${holding.longName}</p><div class="text-right mt-2 ${changeColor}"><span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span><span> (${priceChangePercent.toFixed(2)}%)</span></div>`;
+                card.innerHTML = `
+                    <button class="delete-btn" data-id="${holding.id}" title="Delete Holding">
+                        <i class="fas fa-times-circle"></i>
+                    </button>
+                    <div class="flex justify-between items-center">
+                        <p class="font-bold text-lg">${holding.symbol}</p>
+                        <p class="font-semibold text-lg">${currentPrice != null ? '$' + currentPrice.toFixed(2) : 'N/A'}</p>
+                    </div>
+                    <p class="text-sm text-gray-400 truncate">${holding.longName}</p>
+                    <div class="text-right mt-2 ${changeColor}">
+                        <span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span>
+                        <span> (${priceChangePercent.toFixed(2)}%)</span>
+                    </div>
+                `;
                 summaryList.appendChild(card);
             });
         } catch (error) {

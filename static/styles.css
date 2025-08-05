@@ -177,6 +177,7 @@ body {
     border-radius: 0.5rem;
     border-left: 4px solid #0891B2; /* cyan-600 */
     transition: all 0.2s ease-in-out;
+    position: relative;
 }
 
 .summary-card:hover {
@@ -197,6 +198,13 @@ body {
 }
 .delete-btn:hover {
     color: #F87171; /* red-400 */
+}
+
+.summary-card .delete-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
 }
 
 /* General class for a hidden element */
