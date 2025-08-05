@@ -281,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${createCollapsibleSection('Valuation Ratios', ratiosContent)}
                     ${createCollapsibleSection('Analyst Ratings', createAnalystInfoHtml(analyst_info))}
                     ${createCollapsibleSection('News', createNewsList(news))}
-                    ${createCollapsibleSection('Raw JSON Data (for Debugging)', `<pre class="text-xs whitespace-pre-wrap break-all">${JSON.stringify(data, null, 2)}</pre>`)}
+                    ${createCollapsibleSection('Raw News JSON (for Debugging)', `<pre class="text-xs whitespace-pre-wrap break-all">${JSON.stringify(data.news, null, 2)}</pre>`)}
                 </div>
             `;
         } else {
