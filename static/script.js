@@ -224,6 +224,26 @@ document.addEventListener('DOMContentLoaded', () => {
             contentHtml += `<div class="card"><p class="text-red-400 text-center">Error: ${error}</p></div>`;
         } else if (data) {
             const { info, market_data, valuation_ratios, profitability, dividends_splits, analyst_info, ownership, news } = data;
+            
+            const statsContent = `
+                <div class="info-grid">
+                    ${createKpiItem('Market Cap', formatLargeNumber(market_data.marketCap))}
+                    ${createKpiItem('Volume', formatLargeNumber(market_data.volume))}
+                    ${createKpiItem('52-Wk High', formatCurrency(market_data.fiftyTwoWeekHigh))}
+                    ${createKpiItem('52-Wk Low', formatCurrency(market_data.fiftyTwoWeekLow))}
+                    ${createKpiItem('50-Day Avg', formatCurrency(market_data.fiftyDayAverage))}
+                    ${createKpiItem('200-Day Avg', formatCurrency(market_data.twoHundredDayAverage))}
+                </div>`;
+            const ratiosContent = `
+                <div class="info-grid">
+                    ${createKpiItem('Trailing P/E', valuation_ratios.trailingPE?.toFixed(2) || 'N/A')}
+                    ${createKpiItem('Forward P/E', valuation_ratios.forwardPE?.toFixed(2) || 'N/A')}
+                    ${createKpiItem('Price/Book', valuation_ratios.priceToBook?.toFixed(2) || 'N/A')}
+                    ${createKpiItem('Price/Sales', valuation_ratios.priceToSales?.toFixed(2) || 'N/A')}
+                    ${createKpiItem('PEG Ratio', valuation_ratios.pegRatio?.toFixed(2) || 'N/A')}
+                    ${createKpiItem('EV/EBITDA', valuation_ratios.enterpriseToEbitda?.toFixed(2) || 'N/A')}
+                </div>`;
+
             contentHtml += `
                 <div class="card mb-6">
                     <div class="flex justify-between items-center">
@@ -240,8 +260,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 ${getAddToPortfolioHtml(info.symbol)}
                 <div class="space-y-4 mt-6">
-                    ${createCollapsibleSection('Key Statistics', `...`)}
-                    ${createCollapsibleSection('Valuation Ratios', `...`)}
+                    ${createCollapsibleSection('Key Statistics', statsContent)}
+                    ${createCollapsibleSection('Valuation Ratios', ratiosContent)}
                     ${createCollapsibleSection('Ownership', createOwnershipTable(ownership))}
                     ${createCollapsibleSection('News', createNewsList(news))}
                 </div>
@@ -260,22 +280,6 @@ document.addEventListener('DOMContentLoaded', () => {
         searchContent.innerHTML = contentHtml;
     
         if (data) {
-            // Fill collapsible content dynamically
-            const statsContent = `
-                <div class="info-grid">
-                    ${createKpiItem('Market Cap', formatLargeNumber(data.market_data.marketCap))}
-                    ${createKpiItem('Volume', formatLargeNumber(data.market_data.volume))}
-                    ${createKpiItem('52-Wk High', formatCurrency(data.market_data.fiftyTwoWeekHigh))}
-                    ${createKpiItem('52-Wk Low', formatCurrency(data.market_data.fiftyTwoWeekLow))}
-                </div>`;
-            const ratiosContent = `
-                <div class="info-grid">
-                    ${createKpiItem('Trailing P/E', data.valuation_ratios.trailingPE?.toFixed(2) || 'N/A')}
-                    ${createKpiItem('Forward P/E', data.valuation_ratios.forwardPE?.toFixed(2) || 'N/A')}
-                </div>`;
-            document.querySelector('#collapsible-content-key-statistics').innerHTML = statsContent;
-            document.querySelector('#collapsible-content-valuation-ratios').innerHTML = ratiosContent;
-
             setupIndividualStockChart(data.historical);
             
             searchContent.querySelectorAll('.timeframe-btn').forEach(btn => {
@@ -378,16 +382,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createOwnershipTable(ownership) {
-        if (!ownership) return '<p class="text-gray-500">Ownership data not available.</p>';
-        let html = '<h4>Major Holders</h4><ul class="list-disc pl-5 mb-4">';
-        ownership.major_holders.forEach(holder => {
-            html += `<li>${holder['Holder']}: ${holder['Shares']}</li>`;
-        });
-        html += '</ul><h4>Top Institutional Holders</h4><ul class="list-disc pl-5">';
-        ownership.institutional_holders.slice(0, 5).forEach(holder => {
-            html += `<li>${holder['Holder']}</li>`;
-        });
-        html += '</ul>';
+        if (!ownership || (!ownership.major_holders && !ownership.institutional_holders)) return '<p class="text-gray-500">Ownership data not available.</p>';
+        let html = '';
+        if (ownership.major_holders && ownership.major_holders.length > 0) {
+            html += '<h4>Major Holders</h4><ul class="list-disc pl-5 mb-4">';
+            ownership.major_holders.forEach(holder => {
+                html += `<li>${holder[0]}: ${holder[1]}</li>`;
+            });
+            html += '</ul>';
+        }
+        if (ownership.institutional_holders && ownership.institutional_holders.length > 0) {
+            html += '<h4>Top Institutional Holders</h4><ul class="list-disc pl-5">';
+            ownership.institutional_holders.slice(0, 5).forEach(holder => {
+                html += `<li>${holder['Holder']}</li>`;
+            });
+            html += '</ul>';
+        }
         return html;
     }
 
@@ -406,19 +416,264 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function renderPortfolioSummary() {
-        // ... (implementation unchanged)
+        const summaryList = document.getElementById('portfolioSummaryList');
+        if (!summaryList) return;
+
+        if (portfolio.length === 0) {
+            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings yet.</p>';
+            return;
+        }
+
+        summaryList.innerHTML = '<p class="col-span-full text-center">Loading live prices...</p>';
+        try {
+            const tickers = [...new Set(portfolio.map(p => p.symbol))];
+            const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
+            if (!response.ok) throw new Error('Failed to fetch quotes');
+            
+            const quotes = await response.json();
+            summaryList.innerHTML = '';
+            portfolio.forEach(holding => {
+                const quote = quotes[holding.symbol];
+                const currentPrice = quote?.currentPrice ?? holding.price;
+                const priceChange = currentPrice - (quote?.previousClose ?? holding.price);
+                const priceChangePercent = (quote?.previousClose ?? 0) > 0 ? (priceChange / quote.previousClose) * 100 : 0;
+                const changeColor = priceChange >= 0 ? 'text-green-400' : 'text-red-400';
+                
+                const card = document.createElement('div');
+                card.className = 'summary-card';
+                card.dataset.symbol = holding.symbol;
+                card.innerHTML = `
+                    <button class="delete-btn" data-id="${holding.id}" title="Delete"><i class="fas fa-times-circle"></i></button>
+                    <div class="summary-card-content">
+                        <div class="flex justify-between items-center">
+                            <p class="font-bold text-lg">${holding.symbol}</p>
+                            <p class="font-semibold text-lg">${currentPrice != null ? '$' + currentPrice.toFixed(2) : 'N/A'}</p>
+                        </div>
+                        <p class="text-sm text-gray-400 truncate">${holding.longName}</p>
+                        <div class="text-right mt-2 ${changeColor}">
+                            <span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span>
+                            <span> (${priceChangePercent.toFixed(2)}%)</span>
+                        </div>
+                    </div>`;
+                summaryList.appendChild(card);
+            });
+        } catch (error) {
+            summaryList.innerHTML = `<p class="text-red-400 col-span-full text-center">Could not load prices. ${error.message}</p>`;
+        }
     }
 
     function renderTransactionHistory() {
-        // ... (implementation unchanged)
+        const listEl = document.getElementById('transactionList');
+        const realTransactions = portfolio.filter(item => item.isReal);
+
+        listEl.innerHTML = '';
+        if (realTransactions.length === 0) {
+            listEl.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">No real transactions.</td></tr>';
+            return;
+        }
+
+        realTransactions.forEach(item => {
+            const row = document.createElement('tr');
+            row.className = 'border-b border-gray-800 hover:bg-gray-800';
+            const purchaseDetail = item.purchaseType === 'quantity' ? `${(item.quantity || 0).toFixed(4)} shares` : `$${(item.dollarValue || 0).toFixed(2)}`;
+            row.innerHTML = `
+                <td class="p-3">${item.date || 'N/A'}</td>
+                <td class="p-3 font-bold">${item.symbol}</td>
+                <td class="p-3">${item.longName}</td>
+                <td class="p-3">Buy</td>
+                <td class="p-3 text-right">${purchaseDetail}</td>
+                <td class="p-3 text-right">$${(item.price || 0).toFixed(2)}</td>
+                <td class="p-3 text-right font-semibold">$${(item.dollarValue || 0).toFixed(2)}</td>
+                <td class="p-3 text-center"><button class="delete-btn" data-id="${item.id}"><i class="fas fa-times-circle"></i></button></td>
+            `;
+            listEl.appendChild(row);
+        });
     }
 
     async function renderPresentations() {
-        // ... (implementation unchanged)
+        const listEl = document.getElementById('presentationList');
+        if (!listEl) return;
+        listEl.innerHTML = '<p class="card">Loading presentations...</p>';
+        try {
+            const response = await fetch('/api/presentations');
+            const presentations = await response.json();
+            listEl.innerHTML = '';
+            if (presentations.length === 0) {
+                listEl.innerHTML = '<p class="card text-gray-500">No presentations have been submitted yet.</p>';
+                return;
+            }
+            presentations.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                const actionColor = p.action === 'Buy' ? 'text-green-400' : 'text-red-400';
+                const voteButtons = `<button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button><button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>`;
+                card.innerHTML = `<h4 class="text-xl font-bold">${p.title}</h4><p class="text-sm text-gray-400 mb-3">Proposing to <span class="font-bold ${actionColor}">${p.action} ${p.ticker}</span></p><a href="${p.url}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline mb-4 block">View Presentation</a><div class="flex items-center justify-end space-x-4">${voteButtons}</div>`;
+                listEl.appendChild(card);
+            });
+            listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));
+        } catch (error) {
+            listEl.innerHTML = '<p class="card text-red-400">Could not load presentations.</p>';
+        }
     }
 
     async function renderPortfolioDashboard(newSectionName = null) {
-        // ... (implementation unchanged)
+        const sectionsEl = document.getElementById('portfolioSections');
+        const realHoldings = portfolio.filter(p => p.isReal && p.quantity > 0);
+
+        if (realHoldings.length === 0 && !newSectionName) {
+            sectionsEl.innerHTML = '<p class="card text-center text-gray-500">No real holdings to analyze.</p>';
+            return;
+        }
+
+        const quotes = await fetchQuotesForHoldings(realHoldings);
+        const sections = groupHoldingsBySection(realHoldings, quotes);
+
+        if (newSectionName && !sections[newSectionName]) {
+            sections[newSectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
+        }
+
+        sectionsEl.innerHTML = '';
+        Object.keys(sections).sort().forEach(sectionName => {
+            const section = sections[sectionName];
+            const sectionEl = createPortfolioSection(sectionName, section);
+            sectionsEl.appendChild(sectionEl);
+        });
+
+        updatePortfolioTotals(sections);
+        initializeDragAndDrop();
+    }
+
+    async function fetchQuotesForHoldings(holdings) {
+        if (holdings.length === 0) return {};
+        const tickers = [...new Set(holdings.map(p => p.symbol))];
+        const response = await fetch('/api/quotes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tickers })
+        });
+        return response.ok ? await response.json() : {};
+    }
+
+    function groupHoldingsBySection(holdings, quotes) {
+        const sections = {};
+        holdings.forEach(h => {
+            const sectionName = h.customSection || h.sector || 'Uncategorized';
+            if (!sections[sectionName]) {
+                sections[sectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
+            }
+            const quote = quotes[h.symbol];
+            const currentValue = (h.quantity || 0) * (quote?.currentPrice ?? h.price ?? 0);
+            sections[sectionName].holdings.push({ ...h, currentValue });
+            sections[sectionName].totalCost += h.dollarValue || 0;
+            sections[sectionName].currentValue += currentValue;
+        });
+        return sections;
+    }
+
+    function createPortfolioSection(name, section) {
+        const sectionEl = document.createElement('div');
+        sectionEl.className = 'portfolio-section card mb-6';
+        sectionEl.dataset.sectionName = name;
+        const earnings = section.currentValue - section.totalCost;
+        const earningsColor = earnings >= 0 ? 'text-green-400' : 'text-red-400';
+
+        sectionEl.innerHTML = `
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-bold">${name}</h3>
+                <div class="text-right">
+                    <p class="font-semibold text-xl ${earningsColor}">${earnings >= 0 ? '+' : '-'}$${Math.abs(earnings).toFixed(2)}</p>
+                    <p class="text-sm text-gray-400">Total Gain/Loss</p>
+                </div>
+            </div>
+            <div class="holding-list space-y-2">
+                ${section.holdings.map(h => createHoldingCard(h)).join('') || '<p class="text-gray-500">Drag holdings here.</p>'}
+            </div>
+        `;
+        return sectionEl;
+    }
+
+    function createHoldingCard(h) {
+        const gainLoss = h.currentValue - h.dollarValue;
+        const gainLossColor = gainLoss >= 0 ? 'text-green-400' : 'text-red-400';
+        return `
+            <div class="card bg-gray-800 p-3 flex justify-between items-center" data-id="${h.id}">
+                <div>
+                    <p class="font-bold text-lg">${h.symbol}</p>
+                    <p class="text-sm text-gray-400">${(h.quantity || 0).toFixed(2)} shares</p>
+                </div>
+                <div class="text-right">
+                    <p class="font-semibold">$${h.currentValue.toFixed(2)}</p>
+                    <p class="${gainLossColor}">${gainLoss >= 0 ? '+' : '-'}$${Math.abs(gainLoss).toFixed(2)}</p>
+                </div>
+            </div>
+        `;
+    }
+
+    function updatePortfolioTotals(sections) {
+        let totalValue = 0, totalCost = 0;
+        Object.values(sections).forEach(s => {
+            totalValue += s.currentValue;
+            totalCost += s.totalCost;
+        });
+        const totalEarnings = totalValue - totalCost;
+        const earningsColor = totalEarnings >= 0 ? 'text-green-400' : 'text-red-400';
+
+        document.getElementById('portfolioTotalValue').textContent = `$${totalValue.toFixed(2)}`;
+        document.getElementById('portfolioTotalCost').textContent = `$${totalCost.toFixed(2)}`;
+        const earningsEl = document.getElementById('portfolioTotalEarnings');
+        earningsEl.textContent = `${totalEarnings >= 0 ? '+' : '-'}$${Math.abs(totalEarnings).toFixed(2)}`;
+        earningsEl.className = `text-3xl font-bold mt-2 ${earningsColor}`;
+    }
+
+    function initializeDragAndDrop() {
+        const holdingLists = document.querySelectorAll('.holding-list');
+        holdingLists.forEach(list => {
+            new Sortable(list, {
+                group: 'portfolio',
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                onEnd: function (evt) {
+                    const holdingId = parseInt(evt.item.dataset.id);
+                    const newSectionName = evt.to.closest('.portfolio-section').dataset.sectionName;
+                    updateHoldingSection(holdingId, newSectionName);
+                },
+            });
+        });
+    }
+
+    // --- UI HELPERS & MODAL ---
+    function showConfirmationModal() { document.getElementById('confirmationModal')?.classList.remove('hidden'); }
+    function hideConfirmationModal() { document.getElementById('confirmationModal')?.classList.add('hidden'); }
+
+    // --- PRESENTATION HANDLERS ---
+    async function handlePresentationSubmit(e) {
+        e.preventDefault();
+        const form = e.target;
+        const presentation = {
+            title: form.querySelector('#presentationTitle').value,
+            url: form.querySelector('#presentationUrl').value,
+            ticker: form.querySelector('#presentationTicker').value,
+            action: form.querySelector('input[name="presentationAction"]:checked').value
+        };
+        const response = await fetch('/api/presentations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(presentation) });
+        if (response.ok) {
+            form.reset();
+            renderPresentations();
+        } else {
+            alert('Failed to submit presentation.');
+        }
+    }
+
+    async function handleVote(e) {
+        const button = e.currentTarget;
+        const id = button.dataset.id;
+        const voteType = button.dataset.type;
+        const response = await fetch(`/api/presentations/${id}/vote`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voteType }) });
+        if (response.ok) {
+            renderPresentations();
+        } else {
+            alert('Failed to record vote.');
+        }
     }
 
     // --- CHARTING ---
@@ -506,8 +761,6 @@ document.addEventListener('DOMContentLoaded', () => {
         stockChart.data.datasets[0].data = filteredData.map(d => d.Close);
         stockChart.update();
     }
-
-    // ... other functions like handlePresentationSubmit, handleVote, etc.
 
     // --- START THE APP ---
     initialize();
