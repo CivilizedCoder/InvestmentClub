@@ -340,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const cardHtml = `
             <div class="content-card">
-                <img src="${imageUrl}" class="content-card-image" alt="User uploaded content">
+                <img src="${imageUrl}" alt="User uploaded content">
                 <div class="content-card-text">
                     <p>${textContent}</p>
                 </div>
