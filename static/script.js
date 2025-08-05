@@ -228,7 +228,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const searchContent = document.getElementById('searchContent');
         const formatCurrency = (val) => val != null ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
         const formatLargeNumber = (val) => val != null ? Number(val).toLocaleString() : 'N/A';
-        const formatPercent = (val) => val != null ? `${(val * 100).toFixed(2)}%` : 'N/A';
     
         let contentHtml = `
             <h2 class="text-3xl font-bold mb-4">Stock Search</h2>
@@ -281,7 +280,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${createCollapsibleSection('Valuation Ratios', ratiosContent)}
                     ${createCollapsibleSection('Analyst Ratings', createAnalystInfoHtml(analyst_info))}
                     ${createCollapsibleSection('News', createNewsList(news))}
-                    ${createCollapsibleSection('Raw News JSON (for Debugging)', `<pre class="text-xs whitespace-pre-wrap break-all">${JSON.stringify(data.news, null, 2)}</pre>`)}
                 </div>
             `;
         } else {
@@ -419,11 +417,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         let html = '<ul class="space-y-4">';
         news.slice(0, 5).forEach(item => {
-            if (item.title && item.link) { // Ensure essential data exists
+            const newsContent = item.content;
+            if (newsContent && newsContent.title && newsContent.clickThroughUrl && newsContent.clickThroughUrl.url) {
+                const title = newsContent.title;
+                const link = newsContent.clickThroughUrl.url;
+                const publisher = newsContent.provider?.displayName || 'No publisher listed';
+
                 html += `
                     <li class="border-b border-gray-700 pb-2">
-                        <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="font-semibold hover:text-cyan-400">${item.title}</a>
-                        <p class="text-sm text-gray-400">${item.publisher || 'No publisher listed'}</p>
+                        <a href="${link}" target="_blank" rel="noopener noreferrer" class="font-semibold hover:text-cyan-400">${title}</a>
+                        <p class="text-sm text-gray-400">${publisher}</p>
                     </li>`;
             }
         });
