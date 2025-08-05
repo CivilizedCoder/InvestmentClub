@@ -346,8 +346,11 @@ body {
 
 /* --- EDITABLE CONTENT & GRIDSTACK --- */
 .grid-stack {
-    background: #1F2937; /* gray-800 */
-    border-radius: 0.5rem;
+    background: #111827; /* gray-900 */
+}
+
+.grid-stack.grid-stack-editable {
+    background: #2b384c; /* Lighter for edit mode */
 }
 
 .grid-stack-item-content {
@@ -371,9 +374,9 @@ body {
 }
 
 .grid-stack-item .ui-resizable-handle {
-    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"><path d="M14 0 L0 14 L14 14 Z" fill="rgba(255,255,255,0.5)"/></svg>');
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><path d="M20 0 L0 20 L20 20 Z" fill="rgba(255,255,255,0.5)"/></svg>');
     background-position: bottom right;
-    padding: 0 3px 3px 0;
+    padding: 0 5px 5px 0;
     background-repeat: no-repeat;
     background-origin: content-box;
     box-sizing: border-box;

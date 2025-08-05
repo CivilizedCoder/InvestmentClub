@@ -302,7 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 disableOneColumnMode: true,
             }, `#${pageName}PageContent`);
             grids[pageName] = grid;
-            grid.disable(); // Disable editing by default
+            grid.setStatic(true); // Disable editing by default
         });
     }
 
@@ -334,13 +334,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const addCardBtn = document.getElementById(`add${pageName.charAt(0).toUpperCase() + pageName.slice(1)}CardBtn`);
 
         if (grid.opts.static) { // If static, enable editing
-            grid.enable();
+            grid.setStatic(false);
             editBtn.textContent = 'Save';
             editBtn.classList.remove('button-secondary');
             editBtn.classList.add('button-success');
             addCardBtn.classList.remove('hidden');
         } else { // If editable, save
-            grid.disable();
+            grid.setStatic(true);
             editBtn.textContent = 'Edit';
             editBtn.classList.remove('button-success');
             editBtn.classList.add('button-secondary');
@@ -366,11 +366,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const textContent = prompt("Please enter the text content for the card:");
         if (textContent === null) return;
 
-        let cardInnerHtml = '';
+        let cardInnerHtml = '<div class="grid-stack-item-content">';
         if (imageUrl) {
             cardInnerHtml += `<img src="${imageUrl}" class="content-card-image" alt="User content">`;
         }
-        cardInnerHtml += `<div class="content-card-text">${textContent}</div>`;
+        cardInnerHtml += `<div class="content-card-text">${textContent}</div></div>`;
 
         grids[pageName].addWidget({ w: 4, h: 4, content: cardInnerHtml });
     }
