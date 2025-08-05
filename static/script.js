@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const collapsibleHeader = e.target.closest('.collapsible-header');
+            const collapsibleHeader = e.target.closest('.collapsible-header, .portfolio-section-header');
             if (collapsibleHeader) {
                 const content = collapsibleHeader.nextElementSibling;
                 collapsibleHeader.classList.toggle('open');
@@ -610,6 +610,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const quotes = await fetchQuotesForHoldings(realHoldings);
         const sections = groupHoldingsBySection(realHoldings, quotes);
+        const totalPortfolioValue = Object.values(sections).reduce((sum, sec) => sum + sec.currentValue, 0);
+
 
         if (newSectionName && !sections[newSectionName]) {
             sections[newSectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
@@ -618,7 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sectionsEl.innerHTML = '';
         Object.keys(sections).sort().forEach(sectionName => {
             const section = sections[sectionName];
-            const sectionEl = createPortfolioSection(sectionName, section);
+            const sectionEl = createPortfolioSection(sectionName, section, totalPortfolioValue);
             sectionsEl.appendChild(sectionEl);
         });
 
@@ -653,17 +655,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return sections;
     }
 
-    function createPortfolioSection(name, section) {
+    function createPortfolioSection(name, section, totalPortfolioValue) {
         const sectionEl = document.createElement('div');
         sectionEl.className = 'portfolio-section card mb-6';
         sectionEl.dataset.sectionName = name;
         const earnings = section.currentValue - section.totalCost;
         const earningsPercent = section.totalCost > 0 ? (earnings / section.totalCost) * 100 : 0;
         const earningsColor = earnings >= 0 ? 'text-green-400' : 'text-red-400';
+        const sectionWeight = totalPortfolioValue > 0 ? (section.currentValue / totalPortfolioValue) * 100 : 0;
 
         sectionEl.innerHTML = `
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-2xl font-bold">${name}</h3>
+            <div class="portfolio-section-header flex justify-between items-center mb-4 cursor-pointer">
+                <div>
+                    <h3 class="text-2xl font-bold">${name}</h3>
+                    <p class="text-sm text-gray-400">${sectionWeight.toFixed(2)}% of Portfolio</p>
+                </div>
                 <div class="text-right">
                     <p class="font-semibold text-xl ${earningsColor}">
                         ${earnings >= 0 ? '+' : '-'}$${Math.abs(earnings).toFixed(2)}
@@ -673,21 +679,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             <div class="holding-list space-y-2">
-                ${section.holdings.map(h => createHoldingCard(h)).join('') || '<p class="text-gray-500">Drag holdings here.</p>'}
+                ${section.holdings.map(h => createHoldingCard(h, section.currentValue)).join('') || '<p class="text-gray-500">Drag holdings here.</p>'}
             </div>
         `;
         return sectionEl;
     }
 
-    function createHoldingCard(h) {
+    function createHoldingCard(h, sectionValue) {
         const gainLoss = h.currentValue - h.dollarValue;
         const gainLossPercent = h.dollarValue > 0 ? (gainLoss / h.dollarValue) * 100 : 0;
         const gainLossColor = gainLoss >= 0 ? 'text-green-400' : 'text-red-400';
+        const holdingWeight = sectionValue > 0 ? (h.currentValue / sectionValue) * 100 : 0;
+
         return `
             <div class="card bg-gray-800 p-3 flex justify-between items-center" data-id="${h.id}">
                 <div>
                     <p class="font-bold text-lg">${h.symbol}</p>
                     <p class="text-sm text-gray-400">${(h.quantity || 0).toFixed(4)} shares</p>
+                </div>
+                <div class="text-center">
+                    <p class="font-semibold">${holdingWeight.toFixed(2)}%</p>
+                    <p class="text-xs text-gray-500">of Sector</p>
                 </div>
                 <div class="text-right">
                     <p class="font-semibold">$${h.currentValue.toFixed(2)}</p>

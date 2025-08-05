@@ -328,6 +328,22 @@ body {
     background: #4B5563;
 }
 
+.portfolio-section-header {
+    cursor: pointer;
+}
+
+.holding-list {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
+    padding: 0 1rem;
+}
+
+.holding-list.open {
+    max-height: 1000px; /* Adjust as needed */
+    padding: 1rem 0;
+}
+
 
 /* General class for a hidden element */
 .hidden {
