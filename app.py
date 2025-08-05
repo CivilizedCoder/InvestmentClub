@@ -120,6 +120,13 @@ def clean_nan(obj):
         return None
     return obj
 
+def format_df_to_records(df):
+    """Safely formats a DataFrame to a list of records for JSON."""
+    if df is None or df.empty:
+        return []
+    df = df.where(pd.notnull(df), None)
+    return df.to_dict('records')
+
 # --- HTML & API ROUTES ---
 @app.route('/')
 def index():
@@ -165,6 +172,14 @@ def get_stock_data(ticker_symbol):
         hist = stock.history(period="max").reset_index()
         hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
         
+        # Fetch additional data points
+        major_holders = stock.major_holders
+        institutional_holders = stock.institutional_holders
+        sustainability = stock.sustainability
+        recommendations = stock.recommendations
+        calendar = stock.calendar
+        news = stock.news
+
         data = {
             'info': {
                 'symbol': info.get('symbol'), 'longName': info.get('longName'),
@@ -209,6 +224,14 @@ def get_stock_data(ticker_symbol):
                 'cash_flow_annual': format_financial_data(stock.cashflow),
                 'cash_flow_quarterly': format_financial_data(stock.quarterly_cashflow),
             },
+            'ownership': {
+                'major_holders': format_df_to_records(major_holders),
+                'institutional_holders': format_df_to_records(institutional_holders)
+            },
+            'sustainability': sustainability.to_dict() if sustainability is not None and not sustainability.empty else None,
+            'recommendations_history': format_df_to_records(recommendations),
+            'calendar_events': calendar if calendar else None,
+            'news': news if news else [],
             'historical': hist[['Date', 'Close']].to_dict('records')
         }
         
