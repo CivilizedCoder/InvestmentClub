@@ -53,6 +53,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 collapsibleHeader.classList.toggle('open');
                 content.classList.toggle('open');
             }
+            
+            const transactionLink = e.target.closest('.transaction-link');
+            if (transactionLink) {
+                e.preventDefault();
+                document.getElementById('tickerInput').value = transactionLink.dataset.symbol;
+                executeSearch();
+            }
         });
 
         document.getElementById('portfolioContent')?.addEventListener('click', (e) => {
@@ -105,7 +112,6 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch(`/api/stock/${ticker}`)
             .then(response => response.ok ? response.json() : response.json().then(err => { throw new Error(err.error) }))
             .then(data => {
-                console.log("Received data from server:", JSON.stringify(data, null, 2)); // Log the raw JSON
                 currentStockData = data;
                 renderSearchTab(data);
             })
@@ -150,24 +156,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 newHolding.dollarValue = newHolding.quantity * newHolding.price;
             } else { // 'value'
                 newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
-                if (isNaN(newHolding.dollarValue) || !newHolding.date) {
-                    alert("Please fill in dollar value and date.");
+                const purchasePrice = parseFloat(document.getElementById('purchasePriceByValue').value);
+
+                if (isNaN(newHolding.dollarValue) || isNaN(purchasePrice) || !newHolding.date) {
+                    alert("Please fill in all purchase details: Dollar Value, Price per Share, and Date.");
                     return;
                 }
 
-                // Find the historical price for the purchase date
-                const historicalEntry = currentStockData.historical
-                    .slice() // Create a copy to avoid mutating original data
-                    .reverse() // Search backwards from the most recent date to find the closest date
-                    .find(d => d.Date <= newHolding.date);
-
-                if (!historicalEntry || typeof historicalEntry.Close === 'undefined') {
-                    alert("Could not find historical price data on or before the selected date. The stock may not have been trading then.");
-                    return;
-                }
-
-                const purchasePrice = historicalEntry.Close;
-                newHolding.price = purchasePrice; // Set the correct historical price
+                newHolding.price = purchasePrice; // Set the price from user input
 
                 if (purchasePrice > 0) {
                     newHolding.quantity = newHolding.dollarValue / purchasePrice;
@@ -360,7 +356,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         </label>
                     </div>
                     <div id="valueInputs">
-                        <input type="number" step="any" id="purchaseValue" placeholder="Total Dollar Value (e.g., 500)" class="form-input">
+                         <div class="grid grid-cols-2 gap-4">
+                            <input type="number" step="any" id="purchaseValue" placeholder="Total Dollar Value" class="form-input">
+                            <input type="number" step="any" id="purchasePriceByValue" placeholder="Price per Share" class="form-input">
+                        </div>
                     </div>
                     <div id="quantityInputs" class="hidden">
                         <div class="grid grid-cols-2 gap-4">
@@ -497,7 +496,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const purchaseDetail = item.purchaseType === 'quantity' ? `${(item.quantity || 0).toFixed(4)} shares` : `$${(item.dollarValue || 0).toFixed(2)}`;
             row.innerHTML = `
                 <td class="p-3">${item.date || 'N/A'}</td>
-                <td class="p-3 font-bold">${item.symbol}</td>
+                <td class="p-3 font-bold"><a href="#" class="transaction-link text-cyan-400 hover:underline" data-symbol="${item.symbol}">${item.symbol}</a></td>
                 <td class="p-3">${item.longName}</td>
                 <td class="p-3">Buy</td>
                 <td class="p-3 text-right">${purchaseDetail}</td>
@@ -594,13 +593,17 @@ document.addEventListener('DOMContentLoaded', () => {
         sectionEl.className = 'portfolio-section card mb-6';
         sectionEl.dataset.sectionName = name;
         const earnings = section.currentValue - section.totalCost;
+        const earningsPercent = section.totalCost > 0 ? (earnings / section.totalCost) * 100 : 0;
         const earningsColor = earnings >= 0 ? 'text-green-400' : 'text-red-400';
 
         sectionEl.innerHTML = `
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-2xl font-bold">${name}</h3>
                 <div class="text-right">
-                    <p class="font-semibold text-xl ${earningsColor}">${earnings >= 0 ? '+' : '-'}$${Math.abs(earnings).toFixed(2)}</p>
+                    <p class="font-semibold text-xl ${earningsColor}">
+                        ${earnings >= 0 ? '+' : '-'}$${Math.abs(earnings).toFixed(2)}
+                        <span class="text-lg">(${earningsPercent.toFixed(2)}%)</span>
+                    </p>
                     <p class="text-sm text-gray-400">Total Gain/Loss</p>
                 </div>
             </div>
@@ -613,16 +616,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createHoldingCard(h) {
         const gainLoss = h.currentValue - h.dollarValue;
+        const gainLossPercent = h.dollarValue > 0 ? (gainLoss / h.dollarValue) * 100 : 0;
         const gainLossColor = gainLoss >= 0 ? 'text-green-400' : 'text-red-400';
         return `
             <div class="card bg-gray-800 p-3 flex justify-between items-center" data-id="${h.id}">
                 <div>
                     <p class="font-bold text-lg">${h.symbol}</p>
-                    <p class="text-sm text-gray-400">${(h.quantity || 0).toFixed(2)} shares</p>
+                    <p class="text-sm text-gray-400">${(h.quantity || 0).toFixed(4)} shares</p>
                 </div>
                 <div class="text-right">
                     <p class="font-semibold">$${h.currentValue.toFixed(2)}</p>
-                    <p class="${gainLossColor}">${gainLoss >= 0 ? '+' : '-'}$${Math.abs(gainLoss).toFixed(2)}</p>
+                    <p class="${gainLossColor}">
+                        ${gainLoss >= 0 ? '+' : '-'}$${Math.abs(gainLoss).toFixed(2)}
+                        <span class="text-sm">(${gainLossPercent.toFixed(2)}%)</span>
+                    </p>
                 </div>
             </div>
         `;
@@ -635,12 +642,16 @@ document.addEventListener('DOMContentLoaded', () => {
             totalCost += s.totalCost;
         });
         const totalEarnings = totalValue - totalCost;
+        const totalEarningsPercent = totalCost > 0 ? (totalEarnings / totalCost) * 100 : 0;
         const earningsColor = totalEarnings >= 0 ? 'text-green-400' : 'text-red-400';
 
         document.getElementById('portfolioTotalValue').textContent = `$${totalValue.toFixed(2)}`;
         document.getElementById('portfolioTotalCost').textContent = `$${totalCost.toFixed(2)}`;
         const earningsEl = document.getElementById('portfolioTotalEarnings');
-        earningsEl.textContent = `${totalEarnings >= 0 ? '+' : '-'}$${Math.abs(totalEarnings).toFixed(2)}`;
+        earningsEl.innerHTML = `
+            ${totalEarnings >= 0 ? '+' : '-'}$${Math.abs(totalEarnings).toFixed(2)}
+            <span class="text-lg font-semibold">(${totalEarningsPercent.toFixed(2)}%)</span>
+        `;
         earningsEl.className = `text-3xl font-bold mt-2 ${earningsColor}`;
     }
 
