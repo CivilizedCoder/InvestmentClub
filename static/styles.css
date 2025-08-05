@@ -344,46 +344,31 @@ body {
     padding: 1rem 0;
 }
 
-/* --- EDITABLE CONTENT --- */
-.prose {
-    color: #D1D5DB;
-}
-.prose h1, .prose h2, .prose h3 {
-    color: #F9FAFB;
-}
-.prose a {
-    color: #22D3EE;
-}
-.prose img {
-    border-radius: 0.5rem;
+/* --- EDITABLE CONTENT & GRIDSTACK --- */
+.grid-stack {
+    background: #111827; /* gray-900 */
 }
 
-[contenteditable="true"] {
-    outline: 2px dashed #06B6D4;
-    padding: 0.5rem;
-    border-radius: 0.25rem;
-}
-
-.content-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1rem;
-}
-
-.content-card {
+.grid-stack-item-content {
     background-color: #374151;
     border-radius: 0.5rem;
     overflow: hidden;
+    color: #D1D5DB;
 }
-.content-card img {
+
+.grid-stack-item-content .content-card-image {
     width: 100%;
-    height: 150px; /* Fixed height for uniformity */
+    height: 150px;
     object-fit: cover;
 }
-.content-card-text {
+
+.grid-stack-item-content .content-card-text {
     padding: 1rem;
 }
 
+.grid-stack-item .ui-resizable-handle {
+    filter: invert(1);
+}
 
 /* General class for a hidden element */
 .hidden {
