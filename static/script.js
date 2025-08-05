@@ -120,28 +120,44 @@ document.addEventListener('DOMContentLoaded', () => {
         const isReal = document.getElementById('isRealCheckbox').checked;
         
         const newHolding = {
-            symbol: currentStockData.symbol, longName: currentStockData.longName,
-            isReal: isReal, price: currentStockData.currentPrice
+            symbol: currentStockData.symbol,
+            longName: currentStockData.longName,
+            isReal: isReal,
+            price: currentStockData.currentPrice // Base price, may be overwritten
         };
 
         if (isReal) {
             const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
             newHolding.purchaseType = purchaseType;
             newHolding.date = document.getElementById('purchaseDate').value;
+
             if (purchaseType === 'quantity') {
                 newHolding.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
-                newHolding.price = parseFloat(document.getElementById('purchasePrice').value);
-                if (isNaN(newHolding.quantity) || isNaN(newHolding.price) || !newHolding.date) { alert("Please fill in all purchase details."); return; }
+                newHolding.price = parseFloat(document.getElementById('purchasePrice').value); // Overwrite price with purchase price
+                if (isNaN(newHolding.quantity) || isNaN(newHolding.price) || !newHolding.date) {
+                    alert("Please fill in all purchase details.");
+                    return;
+                }
                 newHolding.dollarValue = newHolding.quantity * newHolding.price;
-            } else {
+            } else { // 'value'
                 newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
-                if (isNaN(newHolding.dollarValue) || !newHolding.date) { alert("Please fill in dollar value and date."); return; }
+                if (isNaN(newHolding.dollarValue) || !newHolding.date) {
+                    alert("Please fill in dollar value and date.");
+                    return;
+                }
+                // Calculate quantity client-side to ensure it's available for filtering immediately.
+                if (newHolding.price && newHolding.price > 0) {
+                    newHolding.quantity = newHolding.dollarValue / newHolding.price;
+                } else {
+                    newHolding.quantity = 0; // Fallback in case price isn't available
+                }
             }
         }
 
         const response = await fetch('/api/portfolio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newHolding) });
         if (response.ok) {
             const addedHolding = await response.json();
+            // Replace local holding with server response to get the correct ID
             portfolio.push(addedHolding);
             alert(`${newHolding.symbol} has been added.`);
             activateTab('portfolio');
@@ -166,11 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Re-render the currently active tab to reflect the change
                 const currentTab = document.querySelector('.nav-link.active')?.dataset.tab;
-                if (currentTab === 'portfolio' || currentTab === 'transactions') {
-                    activateTab(currentTab);
-                } else {
-                    // If deleting from somewhere else, maybe just refresh portfolio summary
-                    renderPortfolioSummary();
+                if (currentTab) {
+                   activateTab(currentTab);
                 }
             } else {
                 const err = await response.json();
