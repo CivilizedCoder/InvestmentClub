@@ -155,7 +155,7 @@ body {
     background-color: #4B5563; /* gray-600 */
     color: white;
     font-weight: 600;
-    padding: 0.75rem 1.5rem;
+    padding: 0.5rem 1rem;
     border-radius: 0.375rem;
     border: none;
     cursor: pointer;
@@ -342,6 +342,13 @@ body {
 .holding-list.open {
     max-height: 1000px; /* Adjust as needed */
     padding: 1rem 0;
+}
+
+/* --- EDITABLE CONTENT --- */
+[contenteditable="true"] {
+    outline: 2px dashed #06B6D4;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
 }
 
 

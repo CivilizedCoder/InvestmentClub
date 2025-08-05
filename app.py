@@ -79,6 +79,11 @@ class Presentation(db.Model):
             'votesFor': self.votes_for, 'votesAgainst': self.votes_against
         }
 
+class PageContent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    page_name = db.Column(db.String(50), unique=True, nullable=False)
+    content = db.Column(db.Text, nullable=False)
+
 # Create the database tables within the application context
 with app.app_context():
     db.create_all()
@@ -357,6 +362,36 @@ def vote_on_presentation(presentation_id):
         
     db.session.commit()
     return jsonify(presentation.to_dict())
+
+# Page Content Management
+@app.route('/api/page/<page_name>', methods=['GET'])
+def get_page_content(page_name):
+    content = PageContent.query.filter_by(page_name=page_name).first()
+    if content:
+        return jsonify({'content': content.content})
+    else:
+        # Provide default content if none exists in the DB
+        default_content = {
+            'about': '<h3 class="text-xl font-semibold mb-4 text-cyan-400">Welcome!</h3><p>This is a dashboard for the Muskingum University Investment Club.</p>',
+            'internships': '<p>This section will list relevant internship opportunities. Check back later for updates.</p>'
+        }
+        return jsonify({'content': default_content.get(page_name, '<p>Content not found.</p>')})
+
+@app.route('/api/page/<page_name>', methods=['POST'])
+def update_page_content(page_name):
+    data = request.get_json()
+    new_content = data.get('content')
+    
+    page = PageContent.query.filter_by(page_name=page_name).first()
+    if page:
+        page.content = new_content
+    else:
+        page = PageContent(page_name=page_name, content=new_content)
+        db.session.add(page)
+        
+    db.session.commit()
+    return jsonify({'message': f'{page_name} content updated successfully.'})
+
 
 if __name__ == '__main__':
     app.run(debug=True)

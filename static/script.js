@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchPortfolio();
         updateUIVisibility();
         activateTab('home');
+        fetchPageContent('about');
+        fetchPageContent('internships');
     }
 
     // --- EVENT LISTENERS ---
@@ -78,6 +80,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 setCurrentUserRole(newRole);
             }
         });
+
+        // Edit/Save Listeners for Static Pages
+        document.getElementById('editAboutBtn').addEventListener('click', () => toggleContentEditable('about'));
+        document.getElementById('editInternshipsBtn').addEventListener('click', () => toggleContentEditable('internships'));
     }
 
     // --- USER PERMISSIONS ---
@@ -112,11 +118,17 @@ document.addEventListener('DOMContentLoaded', () => {
             activateTab('home');
         }
 
-        // Update specific UI elements
-        renderSearchTab(currentStockData); // Re-render to show/hide add form
-        renderPresentations(); // Re-render to show/hide submission form
-        renderPortfolioDashboard(); // Re-render to show/hide admin controls like delete
-        renderTransactionHistory(); // Re-render to show/hide admin controls
+        // Show/hide admin buttons
+        const isAdmin = currentUserRole === 'admin';
+        document.getElementById('editAboutBtn').classList.toggle('hidden', !isAdmin);
+        document.getElementById('editInternshipsBtn').classList.toggle('hidden', !isAdmin);
+        document.getElementById('addSectionBtn').style.display = isAdmin ? 'block' : 'none';
+
+        // Re-render content that depends on role
+        renderSearchTab(currentStockData);
+        renderPresentations();
+        renderPortfolioDashboard();
+        renderTransactionHistory();
     }
 
 
@@ -137,7 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'portfolio': renderPortfolioDashboard(); break;
             case 'transactions': renderTransactionHistory(); break;
             case 'presentations': renderPresentations(); break;
-            case 'internships': /* No dynamic render needed */ break;
+            case 'internships': /* Fetched on init */ break;
+            case 'about': /* Fetched on init */ break;
         }
     }
 
@@ -275,6 +288,44 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // --- CONTENT MANAGEMENT ---
+    async function fetchPageContent(pageName) {
+        try {
+            const response = await fetch(`/api/page/${pageName}`);
+            const data = await response.json();
+            document.getElementById(`${pageName}PageContent`).innerHTML = data.content;
+        } catch (error) {
+            console.error(`Error fetching ${pageName} content:`, error);
+        }
+    }
+
+    async function toggleContentEditable(pageName) {
+        const contentDiv = document.getElementById(`${pageName}PageContent`);
+        const editBtn = document.getElementById(`edit${pageName.charAt(0).toUpperCase() + pageName.slice(1)}Btn`);
+        const isEditable = contentDiv.isContentEditable;
+
+        if (isEditable) {
+            // Save content
+            contentDiv.contentEditable = false;
+            editBtn.textContent = 'Edit';
+            editBtn.classList.remove('button-success');
+            editBtn.classList.add('button-secondary');
+            
+            await fetch(`/api/page/${pageName}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: contentDiv.innerHTML })
+            });
+        } else {
+            // Enable editing
+            contentDiv.contentEditable = true;
+            editBtn.textContent = 'Save';
+            editBtn.classList.remove('button-secondary');
+            editBtn.classList.add('button-success');
+            contentDiv.focus();
+        }
+    }
+
     // --- RENDER FUNCTIONS ---
     function renderSearchTab(data = null, error = null, isLoading = false) {
         const searchContent = document.getElementById('searchContent');

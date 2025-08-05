@@ -67,17 +67,22 @@
         <div id="searchContent" class="tab-content"></div>
 
         <div id="internshipsContent" class="tab-content">
-            <h2 class="text-3xl font-bold mb-4">Internship Opportunities</h2>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-3xl font-bold">Internship Opportunities</h2>
+                <button id="editInternshipsBtn" class="button-secondary hidden">Edit</button>
+            </div>
             <div class="card">
-                <p>This section will list relevant internship opportunities. Check back later for updates.</p>
+                <div id="internshipsPageContent" contenteditable="false"></div>
             </div>
         </div>
 
         <div id="aboutContent" class="tab-content">
-            <h2 class="text-3xl font-bold mb-4">About The Club</h2>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-3xl font-bold">About The Club</h2>
+                <button id="editAboutBtn" class="button-secondary hidden">Edit</button>
+            </div>
             <div class="card">
-                <h3 class="text-xl font-semibold mb-4 text-cyan-400">Welcome!</h3>
-                <p class="whitespace-pre-line">This is a dashboard for the Muskingum University Investment Club.</p>
+                <div id="aboutPageContent" contenteditable="false"></div>
             </div>
         </div>
 
