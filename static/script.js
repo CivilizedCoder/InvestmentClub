@@ -4,101 +4,87 @@ document.addEventListener('DOMContentLoaded', () => {
     let stockChart, timelineChart;
     let currentStockData = null;
     let portfolio = [];
+    let recentSearches = [];
+    const MAX_RECENT_SEARCHES = 5;
 
     // --- INITIALIZATION ---
     async function initialize() {
         initializeEventListeners();
         await fetchPortfolio();
-        // Initial render of the home page content
-        renderPortfolioSummary();
+        renderPortfolioSummary(); // Initial render for the home page
+        activateTab('home'); // Ensure home is active on load
     }
 
     // --- EVENT LISTENERS ---
     function initializeEventListeners() {
-        document.getElementById('fetchBtn')?.addEventListener('click', fetchStockData);
-        document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && fetchStockData());
+        document.getElementById('fetchBtn')?.addEventListener('click', executeSearch);
+        document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && executeSearch());
         document.getElementById('presentationForm')?.addEventListener('submit', handlePresentationSubmit);
 
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const tab = link.dataset.tab;
-
-                // Deactivate all nav links and tab content
-                document.querySelectorAll('.nav-link').forEach(lnk => lnk.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.remove('active-content');
-                });
-
-                // Activate the target nav link and tab content
-                link.classList.add('active');
-                const targetContent = document.getElementById(`${tab}Content`);
-                if (targetContent) {
-                    targetContent.classList.add('active-content');
-                }
-                
-                // Render dynamic content for the newly active tab
-                switch (tab) {
-                    case 'home':
-                        // Reset home view
-                        document.getElementById('homeDashboard').classList.remove('hidden');
-                        document.getElementById('stockDataView').classList.add('hidden');
-                        renderPortfolioSummary(); 
-                        break;
-                    case 'portfolio': renderPortfolioDashboard(); break;
-                    case 'transactions': renderTransactionHistory(); break;
-                    case 'presentations': renderPresentations(); break;
-                }
+                activateTab(tab);
             });
         });
     }
-    
-    // --- STOCK SEARCH ---
-    function fetchStockData() {
+
+    // --- NAVIGATION & TAB CONTROL ---
+    function activateTab(tab) {
+        // Deactivate all nav links and tab content
+        document.querySelectorAll('.nav-link').forEach(lnk => lnk.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active-content');
+        });
+
+        // Activate the target nav link and tab content
+        document.querySelector(`.nav-link[data-tab="${tab}"]`)?.classList.add('active');
+        const targetContent = document.getElementById(`${tab}Content`);
+        if (targetContent) {
+            targetContent.classList.add('active-content');
+        }
+        
+        // Render dynamic content for the newly active tab
+        switch (tab) {
+            case 'home': renderPortfolioSummary(); break;
+            case 'search': renderSearchTab(); break;
+            case 'portfolio': renderPortfolioDashboard(); break;
+            case 'transactions': renderTransactionHistory(); break;
+            case 'presentations': renderPresentations(); break;
+        }
+    }
+
+    // --- STOCK SEARCH WORKFLOW ---
+    function executeSearch() {
         const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
         if (!ticker) return;
-        
-        const homeDashboard = document.getElementById('homeDashboard');
-        const stockDataView = document.getElementById('stockDataView');
-        homeDashboard.innerHTML = '<p class="text-center card">Loading...</p>';
-        stockDataView.classList.add('hidden');
+
+        // Add to recent searches, preventing duplicates and managing list size
+        if (!recentSearches.includes(ticker)) {
+            recentSearches.unshift(ticker);
+            if (recentSearches.length > MAX_RECENT_SEARCHES) {
+                recentSearches.pop();
+            }
+        }
+
+        activateTab('search');
+        fetchStockData(ticker);
+    }
+
+    function fetchStockData(ticker) {
+        // Ensure the search tab is rendered with a loading state
+        renderSearchTab(null, null, true); 
 
         fetch(`/api/stock/${ticker}`)
             .then(response => response.ok ? response.json() : response.json().then(err => { throw new Error(err.error) }))
             .then(data => {
                 currentStockData = data;
-                homeDashboard.classList.add('hidden');
-                stockDataView.innerHTML = getStockDataViewHtml();
-                stockDataView.classList.remove('hidden');
-                updateStockInfoUI(data);
-                setupIndividualStockChart(data.historical);
-                
-                document.getElementById('isRealCheckbox').addEventListener('change', toggleRealPurchaseInputs);
-                document.getElementById('addToPortfolioBtn').addEventListener('click', addStockToPortfolio);
-                document.querySelectorAll('input[name="purchaseType"]').forEach(radio => radio.addEventListener('change', togglePurchaseTypeInputs));
-                document.getElementById('portfolioTicker').textContent = data.symbol;
+                renderSearchTab(data); // Re-render the tab with fetched data
             })
             .catch(error => {
-                homeDashboard.innerHTML = `<p class="text-red-400 text-center card">Error: ${error.message}</p>`;
-                homeDashboard.classList.remove('hidden');
-                stockDataView.classList.add('hidden');
+                renderSearchTab(null, error.message); // Re-render with an error message
             });
-    }
-
-    function updateStockInfoUI(data) {
-        const formatCurrency = (val) => val != null ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
-        const formatLargeNumber = (val) => val != null ? Number(val).toLocaleString() : 'N/A';
-        
-        document.getElementById('stockName').textContent = data.longName || 'N/A';
-        document.getElementById('stockSymbol').textContent = data.symbol || 'N/A';
-        document.getElementById('currentPrice').textContent = formatCurrency(data.currentPrice);
-        document.getElementById('dayHigh').textContent = formatCurrency(data.dayHigh);
-        document.getElementById('dayLow').textContent = formatCurrency(data.dayLow);
-        document.getElementById('fiftyTwoWeekHigh').textContent = formatCurrency(data.fiftyTwoWeekHigh);
-        document.getElementById('fiftyTwoWeekLow').textContent = formatCurrency(data.fiftyTwoWeekLow);
-        document.getElementById('marketCap').textContent = `$${formatLargeNumber(data.marketCap)}`;
-        document.getElementById('volume').textContent = formatLargeNumber(data.volume);
-        document.getElementById('forwardPE').textContent = data.forwardPE ? data.forwardPE.toFixed(2) : 'N/A';
     }
     
     // --- DATABASE & PORTFOLIO LOGIC ---
@@ -142,18 +128,81 @@ document.addEventListener('DOMContentLoaded', () => {
             const addedHolding = await response.json();
             portfolio.push(addedHolding);
             alert(`${newHolding.symbol} has been added.`);
-            document.querySelector('.nav-link[data-tab="portfolio"]').click();
+            activateTab('portfolio');
         } else {
             alert("Failed to add holding.");
         }
     }
     
     // --- RENDER FUNCTIONS FOR EACH TAB ---
-    async function renderPortfolioSummary() {
-        const homeDashboard = document.getElementById('homeDashboard');
-        homeDashboard.innerHTML = `<div id="portfolioSummary"><h3 class="text-2xl font-bold mb-4">Portfolio Snapshot</h3><div id="portfolioSummaryList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div></div>`;
+    function renderSearchTab(data = null, error = null, isLoading = false) {
+        const searchContent = document.getElementById('searchContent');
         
+        // Build the static structure of the search tab if it's not there
+        if (!searchContent.innerHTML.trim()) {
+            searchContent.innerHTML = `
+                <h2 class="text-3xl font-bold mb-4">Stock Search Results</h2>
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <div class="lg:col-span-3" id="stockDataViewWrapper">
+                        <!-- Stock data will be injected here -->
+                    </div>
+                    <div class="lg:col-span-1">
+                        <div class="card">
+                            <h3 class="text-xl font-bold mb-4">Recent Searches</h3>
+                            <ul id="recentSearchesList" class="space-y-2">
+                                <!-- Recent searches will be injected here -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    
+        // Update Recent Searches List
+        const recentListEl = document.getElementById('recentSearchesList');
+        if (recentSearches.length > 0) {
+            recentListEl.innerHTML = recentSearches.map(ticker => 
+                `<li><a href="#" class="recent-search-link text-cyan-400 hover:underline" data-ticker="${ticker}">${ticker}</a></li>`
+            ).join('');
+        } else {
+            recentListEl.innerHTML = `<li class="text-gray-500">No recent searches.</li>`;
+        }
+        
+        // Add event listeners to new links
+        recentListEl.querySelectorAll('.recent-search-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                document.getElementById('tickerInput').value = e.target.dataset.ticker;
+                executeSearch();
+            });
+        });
+    
+        // Update Stock Data View
+        const stockViewWrapper = document.getElementById('stockDataViewWrapper');
+        if (isLoading) {
+            stockViewWrapper.innerHTML = `<div class="card"><p class="text-center">Loading...</p></div>`;
+        } else if (data) {
+            stockViewWrapper.innerHTML = getStockDataViewHtml(); // Use the existing template function
+            updateStockInfoUI(data);
+            setupIndividualStockChart(data.historical);
+            
+            // Re-attach event listeners for the newly created "Add to Portfolio" form
+            document.getElementById('isRealCheckbox')?.addEventListener('change', toggleRealPurchaseInputs);
+            document.getElementById('addToPortfolioBtn')?.addEventListener('click', addStockToPortfolio);
+            document.querySelectorAll('input[name="purchaseType"]')?.forEach(radio => radio.addEventListener('change', togglePurchaseTypeInputs));
+            document.getElementById('portfolioTicker').textContent = data.symbol;
+    
+        } else if (error) {
+            stockViewWrapper.innerHTML = `<div class="card"><p class="text-red-400 text-center">Error: ${error}</p></div>`;
+        } else {
+            stockViewWrapper.innerHTML = `<div class="card"><p class="text-gray-500 text-center">Search for a stock to see details here.</p></div>`;
+        }
+    }
+
+    async function renderPortfolioSummary() {
         const summaryList = document.getElementById('portfolioSummaryList');
+        if (!summaryList) return;
+
         if (portfolio.length === 0) {
             summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings in portfolio yet.</p>';
             return;
@@ -371,8 +420,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- UI HELPERS & EVENT HANDLERS ---
+    function updateStockInfoUI(data) {
+        const formatCurrency = (val) => val != null ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
+        const formatLargeNumber = (val) => val != null ? Number(val).toLocaleString() : 'N/A';
+        
+        document.getElementById('stockName').textContent = data.longName || 'N/A';
+        document.getElementById('stockSymbol').textContent = data.symbol || 'N/A';
+        document.getElementById('currentPrice').textContent = formatCurrency(data.currentPrice);
+        document.getElementById('dayHigh').textContent = formatCurrency(data.dayHigh);
+        document.getElementById('dayLow').textContent = formatCurrency(data.dayLow);
+        document.getElementById('fiftyTwoWeekHigh').textContent = formatCurrency(data.fiftyTwoWeekHigh);
+        document.getElementById('fiftyTwoWeekLow').textContent = formatCurrency(data.fiftyTwoWeekLow);
+        document.getElementById('marketCap').textContent = `$${formatLargeNumber(data.marketCap)}`;
+        document.getElementById('volume').textContent = formatLargeNumber(data.volume);
+        document.getElementById('forwardPE').textContent = data.forwardPE ? data.forwardPE.toFixed(2) : 'N/A';
+    }
 
-    // --- EVENT HANDLERS ---
     async function handlePresentationSubmit(e) {
         e.preventDefault();
         const form = e.target;
@@ -394,7 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('valueInputs').classList.toggle('hidden', purchaseType === 'quantity');
     }
 
-    // --- CHARTING & UI TEMPLATES (UNCHANGED) ---
+    // --- CHARTING & UI TEMPLATES ---
     function getStockDataViewHtml(){return`<div class="card mb-6"><div class="flex justify-between items-center"><div><h2 id="stockName" class="text-3xl font-bold"></h2><p id="stockSymbol" class="text-lg text-gray-400"></p></div><div class="text-right"><p id="currentPrice" class="text-4xl font-bold"></p></div></div></div><div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-2 card"><div id="dateRangeDisplay" class="text-center text-gray-400 font-medium mb-4"></div><div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div><div class="mt-8"><p class="text-center text-sm text-gray-500 mb-2">Timeline Navigator</p><div id="timelineContainer" style="height: 100px;"><canvas id="timelineChart"></canvas></div></div></div><div class="card space-y-4"><h3 class="text-xl font-bold mb-2">Key Statistics</h3><div class="kpi-grid"><div><p class="kpi-label">Day High</p><p id="dayHigh" class="kpi-value"></p></div><div><p class="kpi-label">Day Low</p><p id="dayLow" class="kpi-value"></p></div><div><p class="kpi-label">52-Wk High</p><p id="fiftyTwoWeekHigh" class="kpi-value"></p></div><div><p class="kpi-label">52-Wk Low</p><p id="fiftyTwoWeekLow" class="kpi-value"></p></div><div><p class="kpi-label">Market Cap</p><p id="marketCap" class="kpi-value"></p></div><div><p class="kpi-label">Volume</p><p id="volume" class="kpi-value"></p></div><div><p class="kpi-label">P/E Ratio</p><p id="forwardPE" class="kpi-value"></p></div></div><div id="addToPortfolioSection" class="pt-4 border-t border-gray-700"><h4 class="font-semibold mb-2">Add <span id="portfolioTicker"></span> to Portfolio</h4><div class="flex items-center mb-3"><input id="isRealCheckbox" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-cyan-600 focus:ring-cyan-500 bg-gray-700"><label for="isRealCheckbox" class="ml-2 block text-sm text-gray-300">This is a real holding</label></div><div id="realPurchaseInputs" class="space-y-3 hidden"><div class="flex items-center space-x-4 mb-2"><label class="flex items-center text-sm cursor-pointer"><input type="radio" name="purchaseType" value="quantity" class="form-radio" checked><span class="ml-2">By Quantity</span></label><label class="flex items-center text-sm cursor-pointer"><input type="radio" name="purchaseType" value="value" class="form-radio"><span class="ml-2">By Value</span></label></div><div id="quantityInputs" class="space-y-3"><input type="number" step="any" id="purchaseQuantity" placeholder="Quantity (e.g., 10)" class="form-input"><input type="number" step="any" id="purchasePrice" placeholder="Price per Share" class="form-input"></div><div id="valueInputs" class="space-y-3 hidden"><input type="number" step="any" id="purchaseValue" placeholder="Total Dollar Value (e.g., 500)" class="form-input"></div><input type="date" id="purchaseDate" class="form-input mt-3"></div><button id="addToPortfolioBtn" class="button-success w-full mt-3">Add to Portfolio</button></div></div></div>`;}
     function setupIndividualStockChart(h){if(stockChart)stockChart.destroy();if(timelineChart)timelineChart.destroy();if(!h||h.length===0)return;const s=h.map(d=>({date:d.Date,price:d.Close}));Chart.defaults.color="#E5E7EB";Chart.defaults.font.family="'Inter', sans-serif";const m=document.getElementById("stockChart").getContext("2d");stockChart=new Chart(m,createChartConfig("Stock Price (USD)"));const t=document.getElementById("timelineChart").getContext("2d");timelineChart=new Chart(t,createTimelineConfig(s));addTimelineInteraction(document.getElementById("timelineChart"),timelineChart,stockChart,s);updateMainChart(timelineChart,stockChart)}
     function addTimelineInteraction(c,t,m,d){let i=!1,s=!1,e=!1,a=0,n=0,l=0;const r=x=>{const{left:L,right:R}=t.chartArea;return Math.max(0,Math.min(d.length-1,Math.round((x-L)/(R-L)*(d.length-1))))};c.addEventListener("mousedown",o=>{if(!t.getDatasetMeta(0).data.length)return;const g=o.offsetX,p=t.getDatasetMeta(0),{startIndex:u,endIndex:h}=t.options.plugins.brush,f=p.data[u].x,y=p.data[h].x;g>=f-8&&g<=f+8?s=!0:g>=y-8&&g<=y+8?e=!0:g>f&&g<y&&(i=!0,a=g,n=u,l=h)});window.addEventListener("mousemove",o=>{if(!i&&!s&&!e)return;const g=o.clientX-c.getBoundingClientRect().left;let{startIndex:p,endIndex:u}=t.options.plugins.brush;const h=r(g);if(s){if(h<u)t.options.plugins.brush.startIndex=h}else if(e){if(h>p)t.options.plugins.brush.endIndex=h}else if(i){const f=h-r(a);let y=n+f,k=l+f;y>=0&&k<d.length&&(t.options.plugins.brush.startIndex=y,t.options.plugins.brush.endIndex=k)}t.update("none");updateMainChart(t,m)});window.addEventListener("mouseup",()=>i=s=e=!1)}

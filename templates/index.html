@@ -22,9 +22,17 @@
 
     <!-- Sidebar Navigation -->
     <aside class="w-64 bg-gray-800 p-4 flex-shrink-0 h-screen sticky top-0">
-        <h1 class="text-2xl font-bold text-cyan-400 mb-8">📈 Investment Club</h1>
+        <h1 class="text-2xl font-bold text-cyan-400 mb-4">📈 Investment Club</h1>
+        
+        <!-- Global Search Bar -->
+        <div class="search-bar-container mb-6">
+            <input type="text" id="tickerInput" class="form-input" placeholder="Ticker (e.g., AAPL)">
+            <button id="fetchBtn" class="button-primary">Search</button>
+        </div>
+
         <nav class="flex flex-col space-y-2">
             <a href="#" class="nav-link active" data-tab="home">Home</a>
+            <a href="#" class="nav-link" data-tab="search">Search</a>
             <a href="#" class="nav-link" data-tab="portfolio">Portfolio</a>
             <a href="#" class="nav-link" data-tab="transactions">Transactions</a>
             <a href="#" class="nav-link" data-tab="presentations">Presentations</a>
@@ -37,31 +45,24 @@
     <main class="flex-grow p-6 overflow-auto">
         <!-- Home Page Content -->
         <div id="homeContent" class="tab-content active-content">
-            <h2 class="text-3xl font-bold mb-4">Home & Stock Search</h2>
-            <div class="search-bar-container mb-6">
-                <input type="text" id="tickerInput" class="form-input" placeholder="Enter Ticker Symbol (e.g., AAPL, GOOGL)">
-                <button id="fetchBtn" class="button-primary">Search</button>
-            </div>
-            <!-- Container for switching between welcome/summary and stock details -->
+            <h2 class="text-3xl font-bold mb-4">Club Dashboard</h2>
             <div id="homeDashboard">
-                <div id="welcomeMessage" class="card text-center transition-all duration-500">
-                    <h2 class="text-2xl font-bold mb-2">Welcome to the Dashboard</h2>
-                    <p>Your portfolio is empty. Search for a stock to get started.</p>
-                </div>
-                <div id="portfolioSummary" class="hidden">
+                 <div id="portfolioSummary">
                     <h3 class="text-2xl font-bold mb-4">Portfolio Snapshot</h3>
                     <div id="portfolioSummaryList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <!-- Summary cards will be injected here by script.js -->
                     </div>
                 </div>
             </div>
-            <div id="stockDataView" class="hidden transition-all duration-500">
-                <!-- Stock details will be rendered here -->
-            </div>
+        </div>
+
+        <!-- Search Page Content -->
+        <div id="searchContent" class="tab-content">
+            <!-- Search results will be injected here -->
         </div>
 
         <!-- About Page Content -->
-        <div id="aboutContent" class="tab-content hidden">
+        <div id="aboutContent" class="tab-content">
             <h2 class="text-3xl font-bold mb-4">About The Club</h2>
             <div class="card">
                 <h3 class="text-xl font-semibold mb-4 text-cyan-400">Welcome to the Investment Club Website!</h3>
@@ -79,7 +80,7 @@ gain hands-on experience and build a strong foundation in investing!
         </div>
 
         <!-- Transactions Page Content -->
-        <div id="transactionsContent" class="tab-content hidden">
+        <div id="transactionsContent" class="tab-content">
             <h2 class="text-3xl font-bold mb-4">Transaction History</h2>
             <div class="card">
                 <div class="overflow-x-auto">
@@ -104,7 +105,7 @@ gain hands-on experience and build a strong foundation in investing!
         </div>
 
         <!-- Presentations Page Content -->
-        <div id="presentationsContent" class="tab-content hidden">
+        <div id="presentationsContent" class="tab-content">
             <h2 class="text-3xl font-bold mb-4">Member Presentations</h2>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div class="lg:col-span-2 space-y-6" id="presentationList">
@@ -130,7 +131,7 @@ gain hands-on experience and build a strong foundation in investing!
         </div>
 
         <!-- Portfolio Page Content -->
-        <div id="portfolioContent" class="tab-content hidden">
+        <div id="portfolioContent" class="tab-content">
             <h2 class="text-3xl font-bold mb-4">Portfolio Dashboard</h2>
             <!-- Portfolio Summary -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -154,8 +155,8 @@ gain hands-on experience and build a strong foundation in investing!
             </div>
         </div>
 
-        <!-- Other Tabs (Unchanged) -->
-        <div id="adminContent" class="tab-content hidden">
+        <!-- Admin Panel Content -->
+        <div id="adminContent" class="tab-content">
             <h2 class="text-3xl font-bold mb-4">Admin Panel</h2>
             <div class="card"><p>This section is restricted to club administrators.</p></div>
         </div>
