@@ -371,11 +371,11 @@ document.addEventListener('DOMContentLoaded', () => {
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 const header = el.querySelector('.card-header');
                 if (header) header.removeEventListener('mousedown', onStartDragCard);
-                const textEl = el.querySelector('.content-card-text') || el;
-                textEl.contentEditable = false;
+                const textEl = el.querySelector('.content-card-text, .text-box-content');
+                if (textEl) textEl.contentEditable = false;
             });
 
-            // Serialize the content, including positions, sizes, and font sizes
+            // Serialize the content
             let finalHtml = '';
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 finalHtml += el.outerHTML;
@@ -397,10 +397,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Attach drag handlers and set contenteditable
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
+                // Ensure every card has a header with controls when editing starts
+                if (!el.querySelector('.card-header')) {
+                    const header = document.createElement('div');
+                    header.className = 'card-header';
+                    const hasText = el.querySelector('.content-card-text, .text-box-content');
+                    const textSizeBtnVisibility = hasText ? '' : 'hidden';
+                    header.innerHTML = `
+                        <button class="card-text-size-btn ${textSizeBtnVisibility}"><i class="fas fa-text-height"></i></button>
+                        <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
+                    `;
+                    el.prepend(header);
+                }
+                
                 const header = el.querySelector('.card-header');
                 if(header) header.addEventListener('mousedown', onStartDragCard);
-                const textEl = el.querySelector('.content-card-text') || el;
-                textEl.contentEditable = true;
+                
+                const textEl = el.querySelector('.content-card-text, .text-box-content');
+                if (textEl) {
+                    textEl.contentEditable = true;
+                }
             });
         }
     }
@@ -415,15 +431,19 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'content-card';
         card.style.cssText = 'top: 10px; left: 10px; width: 300px; height: 400px;';
         
-        // Conditionally add the text box only if textContent is not empty
-        const textHtml = textContent ? `
-            <div class="content-card-text" contenteditable="true">
-                <p>${textContent}</p>
-            </div>` : '';
+        let textHtml = '';
+        let textSizeBtnVisibility = 'hidden';
+
+        if (textContent) {
+            textHtml = `<div class="content-card-text" contenteditable="true"><p>${textContent}</p></div>`;
+            textSizeBtnVisibility = '';
+        } else {
+            card.classList.add('no-text');
+        }
 
         card.innerHTML = `
             <div class="card-header">
-                <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
+                <button class="card-text-size-btn ${textSizeBtnVisibility}"><i class="fas fa-text-height"></i></button>
                 <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
             </div>
             <div class="content-card-image-wrapper">
