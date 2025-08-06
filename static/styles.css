@@ -379,8 +379,6 @@ body {
     /* Add manual resizing capabilities */
     resize: both;
     overflow: auto; /* This is required for the 'resize' property to work */
-    min-width: 250px; /* Set a minimum width to prevent collapsing */
-    min-height: 200px; /* Set a minimum height */
 }
 
 .content-card-image-wrapper {
