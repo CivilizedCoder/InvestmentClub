@@ -11,9 +11,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <!-- SortableJS for drag-and-drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <!-- GridStack.js for resizable/draggable widgets -->
-    <link href="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack.min.css" rel="stylesheet"/>
-    <script src="https://cdn.jsdelivr.net/npm/gridstack@7.2.3/dist/gridstack-all.js"></script>
     <!-- Custom Stylesheet -->
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <!-- Google Fonts -->
@@ -77,7 +74,9 @@
                     <button id="editInternshipsBtn" class="button-secondary hidden">Edit</button>
                 </div>
             </div>
-            <div class="grid-stack" id="internshipsPageContent"></div>
+            <div class="card">
+                <div id="internshipsPageContent" contenteditable="false" class="prose content-grid"></div>
+            </div>
         </div>
 
         <div id="aboutContent" class="tab-content">
@@ -88,7 +87,9 @@
                     <button id="editAboutBtn" class="button-secondary hidden">Edit</button>
                 </div>
             </div>
-            <div class="grid-stack" id="aboutPageContent"></div>
+            <div class="card">
+                <div id="aboutPageContent" contenteditable="false" class="prose content-grid"></div>
+            </div>
         </div>
 
         <div id="transactionsContent" class="tab-content">

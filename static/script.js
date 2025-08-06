@@ -8,12 +8,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const MAX_RECENT_SEARCHES = 5;
     let holdingToDeleteId = null;
     let currentUserRole = 'guest'; // 'guest', 'member', or 'admin'
-    let grids = {}; // To hold GridStack instances
 
     // --- INITIALIZATION ---
     async function initialize() {
         initializeEventListeners();
-        initializeGrids();
         await fetchPortfolio();
         updateUIVisibility();
         activateTab('home');
@@ -293,86 +291,63 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- CONTENT MANAGEMENT ---
-    function initializeGrids() {
-        ['about', 'internships'].forEach(pageName => {
-            const grid = GridStack.init({
-                float: true,
-                cellHeight: '70px',
-                minRow: 1,
-                disableOneColumnMode: true,
-            }, `#${pageName}PageContent`);
-            grids[pageName] = grid;
-            grid.setStatic(true); // Disable editing by default
-        });
-    }
-
     async function fetchPageContent(pageName) {
         try {
             const response = await fetch(`/api/page/${pageName}`);
             const data = await response.json();
-            const grid = grids[pageName];
-            grid.removeAll();
-            
-            const contentData = JSON.parse(data.content);
-
-            if (contentData && Array.isArray(contentData)) {
-                contentData.forEach(item => {
-                    grid.addWidget({
-                        x: item.x, y: item.y, w: item.w, h: item.h,
-                        content: item.content
-                    });
-                });
-            }
+            document.getElementById(`${pageName}PageContent`).innerHTML = data.content;
         } catch (error) {
-            console.error(`Error fetching or parsing ${pageName} content:`, error);
+            console.error(`Error fetching ${pageName} content:`, error);
         }
     }
 
     async function toggleContentEditable(pageName) {
-        const grid = grids[pageName];
+        const contentDiv = document.getElementById(`${pageName}PageContent`);
         const editBtn = document.getElementById(`edit${pageName.charAt(0).toUpperCase() + pageName.slice(1)}Btn`);
         const addCardBtn = document.getElementById(`add${pageName.charAt(0).toUpperCase() + pageName.slice(1)}CardBtn`);
+        const isEditable = contentDiv.isContentEditable;
 
-        if (grid.opts.static) { // If static, enable editing
-            grid.setStatic(false);
-            editBtn.textContent = 'Save';
-            editBtn.classList.remove('button-secondary');
-            editBtn.classList.add('button-success');
-            addCardBtn.classList.remove('hidden');
-        } else { // If editable, save
-            grid.setStatic(true);
+        if (isEditable) {
+            // Save content
+            contentDiv.contentEditable = false;
             editBtn.textContent = 'Edit';
             editBtn.classList.remove('button-success');
             editBtn.classList.add('button-secondary');
             addCardBtn.classList.add('hidden');
-
-            const savedData = grid.save().map(item => {
-                return { 
-                    x: item.x, y: item.y, w: item.w, h: item.h, 
-                    content: item.el.querySelector('.grid-stack-item-content').innerHTML 
-                };
-            });
-
+            
             await fetch(`/api/page/${pageName}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: savedData })
+                body: JSON.stringify({ content: contentDiv.innerHTML })
             });
+        } else {
+            // Enable editing
+            contentDiv.contentEditable = true;
+            editBtn.textContent = 'Save';
+            editBtn.classList.remove('button-secondary');
+            editBtn.classList.add('button-success');
+            addCardBtn.classList.remove('hidden');
+            contentDiv.focus();
         }
     }
 
     function addContentCard(pageName) {
-        const imageUrl = prompt("Please enter the URL for the image (optional):");
+        const imageUrl = prompt("Please enter the URL for the image:");
+        if (!imageUrl) return;
+
         const textContent = prompt("Please enter the text content for the card:");
         if (textContent === null) return;
 
-        let cardInnerHtml = '<div class="grid-stack-item-content">';
-        if (imageUrl) {
-            cardInnerHtml += `<img src="${imageUrl}" class="content-card-image" alt="User content">`;
-        }
-        cardInnerHtml += `<div class="content-card-text">${textContent}</div></div>`;
+        const cardHtml = `
+            <div class="content-card">
+                <img src="${imageUrl}" alt="User uploaded content">
+                <div class="content-card-text">
+                    <p>${textContent}</p>
+                </div>
+            </div>`;
 
-        grids[pageName].addWidget({ w: 4, h: 4, content: cardInnerHtml });
+        const contentDiv = document.getElementById(`${pageName}PageContent`);
+        contentDiv.insertAdjacentHTML('beforeend', cardHtml);
     }
 
     // --- RENDER FUNCTIONS ---

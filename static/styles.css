@@ -344,42 +344,44 @@ body {
     padding: 1rem 0;
 }
 
-/* --- EDITABLE CONTENT & GRIDSTACK --- */
-.grid-stack {
-    background: #111827; /* gray-900 */
+/* --- EDITABLE CONTENT --- */
+.prose {
+    color: #D1D5DB;
+}
+.prose h1, .prose h2, .prose h3 {
+    color: #F9FAFB;
+}
+.prose a {
+    color: #22D3EE;
+}
+.prose img {
+    border-radius: 0.5rem;
 }
 
-.grid-stack.grid-stack-editable {
-    background: #2b384c; /* Lighter for edit mode */
+[contenteditable="true"] {
+    outline: 2px dashed #06B6D4;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
 }
 
-.grid-stack-item-content {
+.content-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.content-card {
     background-color: #374151;
     border-radius: 0.5rem;
     overflow: hidden;
-    color: #D1D5DB;
-    display: flex;
-    flex-direction: column;
 }
-
-.grid-stack-item-content .content-card-image {
+.content-card img {
     width: 100%;
-    height: 150px;
+    height: 150px; /* Fixed height for uniformity */
     object-fit: cover;
 }
-
-.grid-stack-item-content .content-card-text {
+.content-card-text {
     padding: 1rem;
-    flex-grow: 1;
-}
-
-.grid-stack-item .ui-resizable-handle {
-    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><path d="M20 0 L0 20 L20 20 Z" fill="rgba(255,255,255,0.5)"/></svg>');
-    background-position: bottom right;
-    padding: 0 5px 5px 0;
-    background-repeat: no-repeat;
-    background-origin: content-box;
-    box-sizing: border-box;
 }
 
 
