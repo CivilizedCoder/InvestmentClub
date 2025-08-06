@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const textSizeBtn = e.target.closest('.card-text-size-btn');
             if (textSizeBtn) {
                 const element = textSizeBtn.closest('.content-card, .content-text-box');
-                const textContainer = element.querySelector('.content-card-text') || element;
+                const textContainer = element.querySelector('.content-card-text, .text-box-content');
                 const currentSize = window.getComputedStyle(textContainer).fontSize;
                 const newSize = prompt("Enter new font size (e.g., '16px', '1.2rem'):", currentSize);
                 if (newSize) {
@@ -371,8 +371,8 @@ document.addEventListener('DOMContentLoaded', () => {
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 const header = el.querySelector('.card-header');
                 if (header) header.removeEventListener('mousedown', onStartDragCard);
-                const textEl = el.querySelector('.content-card-text') || el;
-                textEl.contentEditable = false;
+                const textEl = el.querySelector('.content-card-text, .text-box-content');
+                if(textEl) textEl.contentEditable = false;
             });
 
             // Serialize the content, including positions, sizes, and font sizes
@@ -395,12 +395,23 @@ document.addEventListener('DOMContentLoaded', () => {
             addCardBtn.classList.remove('hidden');
             addTextBtn.classList.remove('hidden');
 
-            // Attach drag handlers and set contenteditable
+            // Attach drag handlers and set contenteditable for all cards, including old ones
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
-                const header = el.querySelector('.card-header');
-                if(header) header.addEventListener('mousedown', onStartDragCard);
-                const textEl = el.querySelector('.content-card-text') || el;
-                textEl.contentEditable = true;
+                // Ensure header exists for all elements
+                let header = el.querySelector('.card-header');
+                if (!header) {
+                    header = document.createElement('div');
+                    header.className = 'card-header';
+                    header.innerHTML = `
+                        <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
+                        <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
+                    `;
+                    el.prepend(header);
+                }
+                
+                header.addEventListener('mousedown', onStartDragCard);
+                const textEl = el.querySelector('.content-card-text, .text-box-content');
+                if(textEl) textEl.contentEditable = true;
             });
         }
     }
