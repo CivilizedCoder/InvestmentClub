@@ -359,7 +359,7 @@ body {
 /* This is the main container for editable content */
 .content-grid {
     position: relative;
-    min-height: 80vh; /* Give plenty of space for absolute positioning */
+    min-height: 150vh; /* Give plenty of vertical space for adding content */
 }
 
 .content-grid.is-editing .card-header {
