@@ -358,30 +358,38 @@ body {
     border-radius: 0.5rem;
 }
 
-[contenteditable="true"] {
-    outline: 2px dashed #06B6D4;
-    padding: 0.5rem;
-    border-radius: 0.25rem;
-}
-
+/* This is the main container for editable content */
 .content-grid {
     position: relative;
-    min-height: 600px; /* Give space for absolute positioning */
+    min-height: 80vh; /* Give plenty of space for absolute positioning */
 }
 
-.content-grid.is-editing .content-card {
+.content-grid.is-editing .content-card,
+.content-grid.is-editing .content-text-box {
     cursor: move;
     border: 1px dashed #06B6D4;
 }
 
+/* Styling for cards with images */
 .content-card {
     background-color: #374151;
     border-radius: 0.5rem;
     display: flex;
     flex-direction: column;
     resize: both;
-    overflow: hidden; /* Changed from auto to hidden to contain elements better */
-    position: absolute; /* Make cards freely placeable */
+    overflow: hidden;
+    position: absolute;
+}
+
+/* Styling for text-only boxes */
+.content-text-box {
+    background-color: transparent;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    resize: both;
+    overflow: auto;
+    position: absolute;
+    border: 1px solid transparent; /* Invisible border by default */
 }
 
 .card-delete-btn {
@@ -407,13 +415,14 @@ body {
     opacity: 1;
 }
 
+/* Show delete button on all content items when in edit mode */
 .content-grid.is-editing .card-delete-btn {
-    display: block; /* Show button in edit mode */
+    display: block;
 }
 
 .content-card-image-wrapper {
     width: 100%;
-    height: 60%; /* Use percentage for better scaling */
+    height: 60%; 
     position: relative;
     flex-shrink: 0;
 }
@@ -427,7 +436,7 @@ body {
 .content-card-text {
     padding: 1rem;
     flex-grow: 1;
-    overflow-y: auto; /* Allow text to scroll if it overflows */
+    overflow-y: auto;
     height: 40%;
 }
 

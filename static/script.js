@@ -59,10 +59,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // Listener for content card delete buttons
+            // Listener for content card and text box delete buttons
             const cardDeleteBtn = e.target.closest('.card-delete-btn');
             if (cardDeleteBtn) {
-                cardDeleteBtn.closest('.content-card').remove();
+                cardDeleteBtn.closest('.content-card, .content-text-box').remove();
                 return;
             }
 
@@ -103,6 +103,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 setCurrentUserRole(newRole);
             }
         });
+        
+        // --- INJECT AND SET UP 'ADD TEXT' BUTTONS ---
+        const addCardButtons = document.querySelectorAll('#addAboutCardBtn, #addInternshipsCardBtn');
+        addCardButtons.forEach(btn => {
+            const pageName = btn.id.includes('About') ? 'about' : 'internships';
+            const textBtn = document.createElement('button');
+            textBtn.id = `add${pageName.charAt(0).toUpperCase() + pageName.slice(1)}TextBtn`;
+            textBtn.className = 'button-secondary hidden ml-2';
+            textBtn.textContent = 'Add Text';
+            btn.insertAdjacentElement('afterend', textBtn);
+            textBtn.addEventListener('click', () => addTextBox(pageName));
+        });
+
 
         // Edit/Save Listeners for Static Pages
         document.getElementById('editAboutBtn').addEventListener('click', () => toggleContentEditable('about'));
@@ -328,22 +341,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const contentDiv = document.getElementById(`${pageName}PageContent`);
         const editBtn = document.getElementById(`edit${pageName.charAt(0).toUpperCase() + pageName.slice(1)}Btn`);
         const addCardBtn = document.getElementById(`add${pageName.charAt(0).toUpperCase() + pageName.slice(1)}CardBtn`);
+        const addTextBtn = document.getElementById(`add${pageName.charAt(0).toUpperCase() + pageName.slice(1)}TextBtn`);
         const isEditable = contentDiv.classList.contains('is-editing');
 
         contentDiv.classList.toggle('is-editing');
 
         if (isEditable) {
             // --- SAVE CONTENT ---
-            contentDiv.contentEditable = false;
             editBtn.textContent = 'Edit';
             editBtn.classList.remove('button-success');
             editBtn.classList.add('button-secondary');
             addCardBtn.classList.add('hidden');
+            addTextBtn.classList.add('hidden');
             
             // Serialize the content, including positions and sizes
             let finalHtml = '';
-            contentDiv.querySelectorAll('.content-card').forEach(card => {
-                finalHtml += card.outerHTML;
+            contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
+                finalHtml += el.outerHTML;
             });
 
             await fetch(`/api/page/${pageName}`, {
@@ -353,22 +367,22 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             // Detach drag handlers
-            contentDiv.querySelectorAll('.content-card').forEach(card => {
-                card.removeEventListener('mousedown', onStartDragCard);
+            contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
+                el.removeEventListener('mousedown', onStartDragCard);
             });
 
         } else {
             // --- ENABLE EDITING ---
-            contentDiv.contentEditable = true;
             editBtn.textContent = 'Save';
             editBtn.classList.remove('button-secondary');
             editBtn.classList.add('button-success');
             addCardBtn.classList.remove('hidden');
+            addTextBtn.classList.remove('hidden');
             contentDiv.focus();
 
             // Attach drag handlers
-            contentDiv.querySelectorAll('.content-card').forEach(card => {
-                card.addEventListener('mousedown', onStartDragCard);
+            contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
+                el.addEventListener('mousedown', onStartDragCard);
             });
         }
     }
@@ -386,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="content-card-image-wrapper">
                     <img src="${imageUrl}" alt="User uploaded content">
                 </div>
-                <div class="content-card-text">
+                <div class="content-card-text" contenteditable="true">
                     <p>${textContent}</p>
                 </div>
             </div>`;
@@ -394,17 +408,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const contentDiv = document.getElementById(`${pageName}PageContent`);
         contentDiv.insertAdjacentHTML('beforeend', cardHtml);
         
-        // Make the new card draggable
+        const newCard = contentDiv.lastElementChild;
+        newCard.addEventListener('mousedown', onStartDragCard);
+    }
+    
+    function addTextBox(pageName) {
+        const textContent = prompt("Please enter the text for the box:");
+        if (textContent === null) return;
+
+        const cardHtml = `
+            <div class="content-text-box" style="top: 10px; left: 10px; width: 300px; height: 150px;" contenteditable="true">
+                 <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
+                <p>${textContent}</p>
+            </div>`;
+
+        const contentDiv = document.getElementById(`${pageName}PageContent`);
+        contentDiv.insertAdjacentHTML('beforeend', cardHtml);
+        
         const newCard = contentDiv.lastElementChild;
         newCard.addEventListener('mousedown', onStartDragCard);
     }
     
     // --- CARD DRAGGING LOGIC ---
     function onStartDragCard(e) {
-        // Don't drag if the user is clicking a button, text, or the resize handle
-        if (e.target.closest('button, .content-card-text, .card-delete-btn') || e.target.tagName === 'P') {
+        // Allow clicks on delete button or editable text
+        if (e.target.closest('.card-delete-btn') || e.target.isContentEditable) {
             return;
         }
+        
         // Check if the click is on the resize handle area
         const rect = e.currentTarget.getBoundingClientRect();
         if (e.clientX > rect.right - 15 && e.clientY > rect.bottom - 15) {
