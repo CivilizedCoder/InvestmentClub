@@ -17,6 +17,24 @@ document.addEventListener('DOMContentLoaded', () => {
         activateTab('home');
         fetchPageContent('about');
         fetchPageContent('internships');
+        
+        // Set an interval to auto-refresh prices every 10 seconds
+        setInterval(autoRefreshPrices, 10000);
+    }
+
+    // --- AUTO-REFRESHER ---
+    function autoRefreshPrices() {
+        // Check which tab is currently active
+        const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
+
+        // If the user is on a page with live prices, refresh it
+        if (activeTab === 'home') {
+            console.log('Auto-refreshing portfolio summary...');
+            renderPortfolioSummary();
+        } else if (activeTab === 'portfolio') {
+            console.log('Auto-refreshing portfolio dashboard...');
+            renderPortfolioDashboard();
+        }
     }
 
     // --- EVENT LISTENERS ---
@@ -340,7 +358,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const cardHtml = `
             <div class="content-card">
-                <img src="${imageUrl}" alt="User uploaded content">
+                <div class="content-card-image-wrapper">
+                    <img src="${imageUrl}" alt="User uploaded content">
+                </div>
                 <div class="content-card-text">
                     <p>${textContent}</p>
                 </div>
@@ -569,19 +589,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryList = document.getElementById('portfolioSummaryList');
         if (!summaryList) return;
 
+        // Don't show loading message on silent auto-refresh
+        if (summaryList.innerHTML === '') {
+            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings yet.</p>';
+        }
+
         if (portfolio.length === 0) {
             summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings yet.</p>';
             return;
         }
 
-        summaryList.innerHTML = '<p class="col-span-full text-center">Loading live prices...</p>';
         try {
             const tickers = [...new Set(portfolio.map(p => p.symbol))];
             const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
             if (!response.ok) throw new Error('Failed to fetch quotes');
             
             const quotes = await response.json();
-            summaryList.innerHTML = '';
+            summaryList.innerHTML = ''; // Clear previous content before re-rendering
             portfolio.forEach(holding => {
                 const quote = quotes[holding.symbol];
                 const currentPrice = quote?.currentPrice ?? holding.price;
