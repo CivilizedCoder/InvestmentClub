@@ -440,13 +440,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const textBox = document.createElement('div');
         textBox.className = 'content-text-box';
         textBox.style.cssText = 'top: 10px; left: 10px; width: 300px; height: 150px;';
-        textBox.contentEditable = true;
         textBox.innerHTML = `
             <div class="card-header">
                  <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
                  <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
             </div>
-            <p>${textContent}</p>`;
+            <div class="text-box-content" contenteditable="true">
+                <p>${textContent}</p>
+            </div>`;
 
         const contentDiv = document.getElementById(`${pageName}PageContent`);
         contentDiv.appendChild(textBox);
