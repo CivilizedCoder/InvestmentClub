@@ -165,8 +165,46 @@ def format_financial_data(df):
     df.columns = df.columns.strftime('%Y-%m-%d')
     return df.transpose().to_dict()
 
+@app.route('/api/stock/<ticker_symbol>/history')
+def get_stock_history(ticker_symbol):
+    """
+    Fetches historical data for a specific ticker with a given period and interval.
+    Used for dynamic chart updates (e.g., 1d, 1w).
+    """
+    period = request.args.get('period', '1y')
+    interval = request.args.get('interval', '1d')
+
+    try:
+        stock = yf.Ticker(ticker_symbol)
+        hist = stock.history(period=period, interval=interval)
+        
+        # yfinance returns 'Datetime' for intraday and 'Date' for daily in the index
+        hist.reset_index(inplace=True)
+
+        # Check for the appropriate date/datetime column and format it
+        if 'Datetime' in hist.columns:
+            hist['Timestamp'] = hist['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            hist_data = hist[['Timestamp', 'Close']].to_dict('records')
+        elif 'Date' in hist.columns:
+            hist['Timestamp'] = hist['Date'].dt.strftime('%Y-%m-%d')
+            hist_data = hist[['Timestamp', 'Close']].to_dict('records')
+        else:
+            return jsonify({"error": "Could not find a date column in the historical data."}), 404
+
+        # Clean NaN values before returning
+        cleaned_data = clean_nan(hist_data)
+        return jsonify(cleaned_data)
+
+    except Exception as e:
+        print(f"Error fetching history for {ticker_symbol} with period={period}, interval={interval}: {e}")
+        return jsonify({"error": "Failed to fetch historical data."}), 500
+
 @app.route('/api/stock/<ticker_symbol>')
 def get_stock_data(ticker_symbol):
+    """
+    Fetches a comprehensive set of data for a stock's main page.
+    This includes company info, market data, and max-period daily historical data for the main chart.
+    """
     try:
         stock = yf.Ticker(ticker_symbol)
         info = stock.info
@@ -174,6 +212,7 @@ def get_stock_data(ticker_symbol):
         if not info or 'regularMarketPrice' not in info or info.get('regularMarketPrice') is None:
             return jsonify({"error": "Invalid ticker or data not available"}), 404
         
+        # Fetch max historical data for the initial chart view
         hist = stock.history(period="max").reset_index()
         hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
         

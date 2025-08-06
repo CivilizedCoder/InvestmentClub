@@ -562,7 +562,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="card mb-6">
                     <div class="flex space-x-2 mb-4">
-                        ${['5D', '1M', '3M', '6M', '1Y', '5Y', 'MAX'].map(t => `<button class="timeframe-btn" data-range="${t}">${t}</button>`).join('')}
+                        ${['Today', '1W', '1M', '3M', '6M', '1Y', '5Y', 'MAX'].map(t => `<button class="timeframe-btn" data-range="${t}">${t}</button>`).join('')}
                     </div>
                     <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
                 </div>
@@ -590,13 +590,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data) {
             setupIndividualStockChart(data.historical);
             
+            // Add event listeners to the new timeframe buttons
             searchContent.querySelectorAll('.timeframe-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
+                    const range = btn.dataset.range;
                     searchContent.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
-                    updateChartByRange(data.historical, btn.dataset.range);
+
+                    // If range is 'Today' or '1W', fetch new high-frequency data
+                    if (range === 'Today' || range === '1W') {
+                        fetchAndupdateChart(data.info.symbol, range);
+                    } else {
+                        // Otherwise, use the existing daily data for longer ranges
+                        updateChartByRange(data.historical, range);
+                    }
                 });
             });
+
+            // Set a default active button and load its chart view
             searchContent.querySelector('.timeframe-btn[data-range="1Y"]')?.classList.add('active');
             updateChartByRange(data.historical, '1Y');
 
@@ -1047,6 +1058,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- CHARTING ---
+    async function fetchAndupdateChart(ticker, range) {
+        if (!stockChart) return;
+
+        let period, interval, unit;
+        if (range === 'Today') {
+            period = '1d';
+            interval = '1m';
+            unit = 'minute';
+        } else { // '1W'
+            period = '7d';
+            interval = '1h';
+            unit = 'hour';
+        }
+
+        try {
+            const response = await fetch(`/api/stock/${ticker}/history?period=${period}&interval=${interval}`);
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to fetch chart data');
+            }
+            const data = await response.json();
+            
+            if (data.length === 0) {
+                console.warn(`No historical data returned for ${ticker} with range ${range}`);
+                stockChart.data.labels = [];
+                stockChart.data.datasets[0].data = [];
+                stockChart.update();
+                return;
+            }
+
+            stockChart.data.labels = data.map(d => d.Timestamp);
+            stockChart.data.datasets[0].data = data.map(d => d.Close);
+            stockChart.options.scales.x.time.unit = unit;
+            stockChart.update();
+
+        } catch (error) {
+            console.error(`Failed to fetch chart data for range ${range}:`, error);
+        }
+    }
+
     function setupIndividualStockChart(historicalData) {
         const ctx = document.getElementById('stockChart')?.getContext('2d');
         if (!ctx) return;
@@ -1090,7 +1141,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         callbacks: {
                             title: function(context) {
                                 const date = new Date(context[0].parsed.x);
-                                return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                                const timeOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+                                if (stockChart.options.scales.x.time.unit !== 'day') {
+                                    timeOptions.hour = '2-digit';
+                                    timeOptions.minute = '2-digit';
+                                }
+                                return date.toLocaleDateString('en-US', timeOptions);
                             },
                             label: function(context) {
                                 let label = context.dataset.label || '';
@@ -1116,7 +1172,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let startDate = new Date();
         
         switch (range) {
-            case '5D': startDate.setDate(now.getDate() - 5); break;
+            case '1W': startDate.setDate(now.getDate() - 7); break;
             case '1M': startDate.setMonth(now.getMonth() - 1); break;
             case '3M': startDate.setMonth(now.getMonth() - 3); break;
             case '6M': startDate.setMonth(now.getMonth() - 6); break;
@@ -1129,6 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         stockChart.data.labels = filteredData.map(d => d.Date);
         stockChart.data.datasets[0].data = filteredData.map(d => d.Close);
+        stockChart.options.scales.x.time.unit = 'day'; // Reset unit to day for longer timeframes
         stockChart.update();
     }
 
