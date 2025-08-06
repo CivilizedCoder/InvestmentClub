@@ -408,13 +408,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function addContentCard(pageName) {
         const imageUrl = prompt("Please enter the URL for the image:");
         if (!imageUrl) return;
-
-        const textContent = prompt("Please enter the text content for the card:");
-        if (textContent === null) return;
-
+    
+        const textContent = prompt("Please enter the text content for the card (optional):");
+    
         const card = document.createElement('div');
         card.className = 'content-card';
         card.style.cssText = 'top: 10px; left: 10px; width: 300px; height: 400px;';
+        
+        // Conditionally add the text box only if textContent is not empty
+        const textHtml = textContent ? `
+            <div class="content-card-text" contenteditable="true">
+                <p>${textContent}</p>
+            </div>` : '';
+
         card.innerHTML = `
             <div class="card-header">
                 <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
@@ -423,10 +429,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="content-card-image-wrapper">
                 <img src="${imageUrl}" alt="User uploaded content">
             </div>
-            <div class="content-card-text" contenteditable="true">
-                <p>${textContent}</p>
-            </div>`;
-
+            ${textHtml}`;
+    
         const contentDiv = document.getElementById(`${pageName}PageContent`);
         contentDiv.appendChild(card);
         
