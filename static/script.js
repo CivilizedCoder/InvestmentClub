@@ -29,10 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // If the user is on a page with live prices, refresh it
         if (activeTab === 'home') {
-            console.log('Auto-refreshing portfolio summary...');
             renderPortfolioSummary();
         } else if (activeTab === 'portfolio') {
-            console.log('Auto-refreshing portfolio dashboard...');
             renderPortfolioDashboard();
         }
     }
@@ -58,6 +56,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (deleteButton) {
                 e.stopPropagation();
                 promptForDelete(parseInt(deleteButton.dataset.id, 10));
+                return;
+            }
+            
+            // Listener for content card delete buttons
+            const cardDeleteBtn = e.target.closest('.card-delete-btn');
+            if (cardDeleteBtn) {
+                cardDeleteBtn.closest('.content-card').remove();
                 return;
             }
 
@@ -323,29 +328,48 @@ document.addEventListener('DOMContentLoaded', () => {
         const contentDiv = document.getElementById(`${pageName}PageContent`);
         const editBtn = document.getElementById(`edit${pageName.charAt(0).toUpperCase() + pageName.slice(1)}Btn`);
         const addCardBtn = document.getElementById(`add${pageName.charAt(0).toUpperCase() + pageName.slice(1)}CardBtn`);
-        const isEditable = contentDiv.isContentEditable;
+        const isEditable = contentDiv.classList.contains('is-editing');
+
+        contentDiv.classList.toggle('is-editing');
 
         if (isEditable) {
-            // Save content
+            // --- SAVE CONTENT ---
             contentDiv.contentEditable = false;
             editBtn.textContent = 'Edit';
             editBtn.classList.remove('button-success');
             editBtn.classList.add('button-secondary');
             addCardBtn.classList.add('hidden');
             
+            // Serialize the content, including positions and sizes
+            let finalHtml = '';
+            contentDiv.querySelectorAll('.content-card').forEach(card => {
+                finalHtml += card.outerHTML;
+            });
+
             await fetch(`/api/page/${pageName}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: contentDiv.innerHTML })
+                body: JSON.stringify({ content: finalHtml })
             });
+
+            // Detach drag handlers
+            contentDiv.querySelectorAll('.content-card').forEach(card => {
+                card.removeEventListener('mousedown', onStartDragCard);
+            });
+
         } else {
-            // Enable editing
+            // --- ENABLE EDITING ---
             contentDiv.contentEditable = true;
             editBtn.textContent = 'Save';
             editBtn.classList.remove('button-secondary');
             editBtn.classList.add('button-success');
             addCardBtn.classList.remove('hidden');
             contentDiv.focus();
+
+            // Attach drag handlers
+            contentDiv.querySelectorAll('.content-card').forEach(card => {
+                card.addEventListener('mousedown', onStartDragCard);
+            });
         }
     }
 
@@ -357,7 +381,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (textContent === null) return;
 
         const cardHtml = `
-            <div class="content-card">
+            <div class="content-card" style="top: 10px; left: 10px; width: 300px; height: 400px;">
+                <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
                 <div class="content-card-image-wrapper">
                     <img src="${imageUrl}" alt="User uploaded content">
                 </div>
@@ -368,7 +393,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const contentDiv = document.getElementById(`${pageName}PageContent`);
         contentDiv.insertAdjacentHTML('beforeend', cardHtml);
+        
+        // Make the new card draggable
+        const newCard = contentDiv.lastElementChild;
+        newCard.addEventListener('mousedown', onStartDragCard);
     }
+    
+    // --- CARD DRAGGING LOGIC ---
+    function onStartDragCard(e) {
+        // Don't drag if the user is clicking a button, text, or the resize handle
+        if (e.target.closest('button, .content-card-text, .card-delete-btn') || e.target.tagName === 'P') {
+            return;
+        }
+        // Check if the click is on the resize handle area
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (e.clientX > rect.right - 15 && e.clientY > rect.bottom - 15) {
+            return;
+        }
+
+        e.preventDefault();
+        const card = e.currentTarget;
+        const initialX = e.clientX;
+        const initialY = e.clientY;
+        const initialTop = card.offsetTop;
+        const initialLeft = card.offsetLeft;
+        const gridSnap = 10; // Snap to 10px grid
+
+        function onDrag(moveEvent) {
+            const dx = moveEvent.clientX - initialX;
+            const dy = moveEvent.clientY - initialY;
+            
+            let newLeft = initialLeft + dx;
+            let newTop = initialTop + dy;
+
+            // Snap to grid
+            newLeft = Math.round(newLeft / gridSnap) * gridSnap;
+            newTop = Math.round(newTop / gridSnap) * gridSnap;
+
+            card.style.left = `${newLeft}px`;
+            card.style.top = `${newTop}px`;
+        }
+
+        function onStopDrag() {
+            document.removeEventListener('mousemove', onDrag);
+            document.removeEventListener('mouseup', onStopDrag);
+        }
+
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener('mouseup', onStopDrag);
+    }
+
 
     // --- RENDER FUNCTIONS ---
     function renderSearchTab(data = null, error = null, isLoading = false) {

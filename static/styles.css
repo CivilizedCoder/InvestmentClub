@@ -365,9 +365,13 @@ body {
 }
 
 .content-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1rem;
+    position: relative;
+    min-height: 600px; /* Give space for absolute positioning */
+}
+
+.content-grid.is-editing .content-card {
+    cursor: move;
+    border: 1px dashed #06B6D4;
 }
 
 .content-card {
@@ -375,28 +379,56 @@ body {
     border-radius: 0.5rem;
     display: flex;
     flex-direction: column;
-    
-    /* Add manual resizing capabilities */
     resize: both;
-    overflow: auto; /* This is required for the 'resize' property to work */
+    overflow: hidden; /* Changed from auto to hidden to contain elements better */
+    position: absolute; /* Make cards freely placeable */
+}
+
+.card-delete-btn {
+    display: none; /* Hidden by default */
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: #DC2626;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
+    line-height: 24px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 10;
+    opacity: 0.8;
+}
+
+.card-delete-btn:hover {
+    opacity: 1;
+}
+
+.content-grid.is-editing .card-delete-btn {
+    display: block; /* Show button in edit mode */
 }
 
 .content-card-image-wrapper {
     width: 100%;
-    height: 15rem; /* A good default height that allows stretching */
+    height: 60%; /* Use percentage for better scaling */
     position: relative;
-    flex-shrink: 0; /* Prevents the image wrapper from shrinking */
+    flex-shrink: 0;
 }
 
 .content-card-image-wrapper img {
     width: 100%;
     height: 100%;
-    object-fit: cover; /* This crops the image to fit, as requested */
+    object-fit: cover;
 }
 
 .content-card-text {
     padding: 1rem;
-    flex-grow: 1; /* Allows text area to fill remaining vertical space */
+    flex-grow: 1;
+    overflow-y: auto; /* Allow text to scroll if it overflows */
+    height: 40%;
 }
 
 
