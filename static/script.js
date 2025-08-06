@@ -78,6 +78,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return;
             }
+            
+            // Listener for proportion lock button
+            const lockBtn = e.target.closest('.card-lock-btn');
+            if (lockBtn) {
+                const card = lockBtn.closest('.content-card');
+                if (card) {
+                    card.classList.toggle('proportions-locked');
+                    const icon = lockBtn.querySelector('i');
+                    if (card.classList.contains('proportions-locked')) {
+                        icon.classList.remove('fa-unlock-alt');
+                        icon.classList.add('fa-lock');
+                    } else {
+                        icon.classList.remove('fa-lock');
+                        icon.classList.add('fa-unlock-alt');
+                    }
+                }
+                return;
+            }
 
             const card = e.target.closest('.summary-card');
             if (card && card.dataset.symbol) {
@@ -367,15 +385,16 @@ document.addEventListener('DOMContentLoaded', () => {
             addCardBtn.classList.add('hidden');
             addTextBtn.classList.add('hidden');
             
-            // Detach drag handlers and remove contenteditable attributes
+            // Detach drag handlers, remove contenteditable attributes, and clean up classes
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
+                el.classList.remove('proportions-locked'); // Clean up state
                 const header = el.querySelector('.card-header');
                 if (header) header.removeEventListener('mousedown', onStartDragCard);
                 const textEl = el.querySelector('.content-card-text, .text-box-content');
                 if(textEl) textEl.contentEditable = false;
             });
 
-            // Serialize the content, including positions, sizes, and font sizes
+            // Serialize the content
             let finalHtml = '';
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 finalHtml += el.outerHTML;
@@ -402,10 +421,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!header) {
                     header = document.createElement('div');
                     header.className = 'card-header';
-                    header.innerHTML = `
+                    let buttons = `
                         <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
                         <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
                     `;
+                    if (el.classList.contains('content-card')) {
+                         buttons = `<button class="card-lock-btn" title="Lock Proportions"><i class="fas fa-unlock-alt"></i></button>` + buttons;
+                    }
+                    header.innerHTML = buttons;
                     el.prepend(header);
                 }
                 
@@ -428,6 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
         card.style.cssText = 'top: 10px; left: 10px; width: 300px; height: 400px;';
         card.innerHTML = `
             <div class="card-header">
+                <button class="card-lock-btn" title="Lock Proportions"><i class="fas fa-unlock-alt"></i></button>
                 <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
                 <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
             </div>
