@@ -20,6 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Set an interval to auto-refresh prices every 10 seconds
         setInterval(autoRefreshPrices, 10000);
+        // Set an interval to refresh presentation vote timers
+        setInterval(renderPresentations, 60000);
     }
 
     // --- AUTO-REFRESHER ---
@@ -831,7 +833,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     
         if (!listEl) return;
-        listEl.innerHTML = '<p class="card">Loading presentations...</p>';
+        
+        // Avoid the "Loading..." message on periodic refreshes
+        const isInitialLoad = listEl.innerHTML === '' || listEl.querySelector('.card');
+
+        if (isInitialLoad) {
+            listEl.innerHTML = '<p class="card">Loading presentations...</p>';
+        }
+
         try {
             const response = await fetch(`/api/presentations?role=${currentUserRole}`);
             const presentations = await response.json();
@@ -845,24 +854,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.className = 'card';
                 const actionColor = p.action === 'Buy' ? 'text-green-400' : 'text-red-400';
                 
-                let voteButtons = '';
-                if (currentUserRole === 'admin') {
-                    voteButtons = `
-                        <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button>
-                        <button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>
+                let voteInfoHtml = '';
+                // Vote counts are present for admins OR if voting is closed for members
+                if (p.votesFor !== undefined && p.votesAgainst !== undefined) {
+                    voteInfoHtml = `
+                        <div class="flex items-center space-x-4">
+                            <span class="flex items-center"><i class="fas fa-thumbs-up text-green-500 mr-2"></i> ${p.votesFor}</span>
+                            <span class="flex items-center"><i class="fas fa-thumbs-down text-red-500 mr-2"></i> ${p.votesAgainst}</span>
+                        </div>
                     `;
-                } else {
+                }
+
+                let voteButtons = '';
+                // Only show vote buttons if voting is open and user is not a guest
+                if (p.isVotingOpen && currentUserRole !== 'guest') {
                     voteButtons = `
                         <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i></button>
                         <button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i></button>
                     `;
                 }
 
+                const timeRemaining = formatTimeRemaining(p.votingEndsAt);
+                const timeStatusColor = p.isVotingOpen ? 'text-yellow-400' : 'text-gray-400';
+
                 card.innerHTML = `
                     <h4 class="text-xl font-bold">${p.title}</h4>
-                    <p class="text-sm text-gray-400 mb-3">Proposing to <span class="font-bold ${actionColor}">${p.action} ${p.ticker}</span></p>
-                    <a href="${p.url}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline mb-4 block">View Presentation</a>
-                    <div class="flex items-center justify-end space-x-4">${voteButtons}</div>
+                    <p class="text-sm text-gray-400 mb-2">Proposing to <span class="font-bold ${actionColor}">${p.action} ${p.ticker}</span></p>
+                    <a href="${p.url}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline mb-3 block">View Presentation</a>
+                    <div class="border-t border-gray-700 pt-3 mt-3 flex justify-between items-center">
+                        <div>
+                            ${voteInfoHtml}
+                            <p class="text-sm ${timeStatusColor} mt-1">${timeRemaining}</p>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            ${voteButtons}
+                        </div>
+                    </div>
                 `;
                 listEl.appendChild(card);
             });
@@ -893,7 +920,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sectionsEl.innerHTML = '';
         Object.keys(sections).sort().forEach(sectionName => {
             const section = sections[sectionName];
-            const sectionEl = createPortfolioSection(sectionName, section, totalPortfolioValue);
+            const sectionEl = createPortfolioSection(name, section, totalPortfolioValue);
             sectionsEl.appendChild(sectionEl);
         });
 
@@ -1025,6 +1052,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- UI HELPERS & MODAL ---
     function showConfirmationModal() { document.getElementById('confirmationModal')?.classList.remove('hidden'); }
     function hideConfirmationModal() { document.getElementById('confirmationModal')?.classList.add('hidden'); }
+    
+    function getTimeRemaining(endtime) {
+        const total = Date.parse(endtime) - Date.parse(new Date());
+        const seconds = Math.floor((total / 1000) % 60);
+        const minutes = Math.floor((total / 1000 / 60) % 60);
+        const hours = Math.floor((total / (1000 * 60 * 60)) % 24);
+        const days = Math.floor(total / (1000 * 60 * 60 * 24));
+        
+        return { total, days, hours, minutes, seconds };
+    }
+    
+    function formatTimeRemaining(endtime) {
+        const t = getTimeRemaining(endtime);
+        if (t.total <= 0) {
+            return "Voting has ended.";
+        }
+        
+        let parts = [];
+        if (t.days > 0) parts.push(`${t.days}d`);
+        if (t.hours > 0) parts.push(`${t.hours}h`);
+        if (t.minutes > 0) parts.push(`${t.minutes}m`);
+        
+        if (parts.length === 0 && t.seconds > 0) {
+            return "Time left: <1m";
+        }
+        
+        return `Time left: ${parts.join(' ')}`;
+    }
 
     // --- PRESENTATION HANDLERS ---
     async function handlePresentationSubmit(e) {
@@ -1053,7 +1108,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (response.ok) {
             renderPresentations();
         } else {
-            alert('Failed to record vote.');
+            const err = await response.json();
+            alert(`Failed to record vote: ${err.error}`);
         }
     }
 

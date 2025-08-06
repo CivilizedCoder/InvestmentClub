@@ -7,6 +7,7 @@ import os
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import ProgrammingError
 import math
+from datetime import datetime, timedelta
 
 # Initialize the SQLAlchemy database extension WITHOUT an app instance.
 db = SQLAlchemy()
@@ -71,13 +72,28 @@ class Presentation(db.Model):
     action = db.Column(db.String(10), nullable=False) # 'Buy' or 'Sell'
     votes_for = db.Column(db.Integer, default=0)
     votes_against = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    voting_ends_at = db.Column(db.DateTime, nullable=False)
 
-    def to_dict(self):
-        return {
-            'id': self.id, 'title': self.title, 'url': self.url,
-            'ticker': self.ticker, 'action': self.action,
-            'votesFor': self.votes_for, 'votesAgainst': self.votes_against
+    def to_dict(self, role='guest'):
+        is_voting_open = datetime.utcnow() < self.voting_ends_at
+        
+        presentation_dict = {
+            'id': self.id,
+            'title': self.title,
+            'url': self.url,
+            'ticker': self.ticker,
+            'action': self.action,
+            'votingEndsAt': self.voting_ends_at.isoformat() + 'Z', # ISO format for JS
+            'isVotingOpen': is_voting_open
         }
+
+        # Admins see votes anytime. Members only see votes after the period is closed.
+        if role == 'admin' or not is_voting_open:
+            presentation_dict['votesFor'] = self.votes_for
+            presentation_dict['votesAgainst'] = self.votes_against
+        
+        return presentation_dict
 
 class PageContent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -95,21 +111,40 @@ def shutdown_session(exception=None):
 
 # --- HELPER FUNCTIONS ---
 def add_columns_if_missing():
-    """Checks for and adds missing columns to the holding table."""
+    """Checks for and adds missing columns to tables."""
     try:
         inspector = inspect(db.engine)
-        columns = [c['name'] for c in inspector.get_columns('holding')]
         
+        # Check holding table
+        holding_columns = [c['name'] for c in inspector.get_columns('holding')]
         with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-            if 'sector' not in columns:
-                print("MIGRATION: 'sector' column not found. Adding it now.")
+            if 'sector' not in holding_columns:
+                print("MIGRATION: 'sector' column not found in holding. Adding it now.")
                 connection.execute(text('ALTER TABLE holding ADD COLUMN sector VARCHAR(50)'))
                 print("MIGRATION: Successfully added 'sector' column.")
 
-            if 'custom_section' not in columns:
-                print("MIGRATION: 'custom_section' column not found. Adding it now.")
+            if 'custom_section' not in holding_columns:
+                print("MIGRATION: 'custom_section' column not found in holding. Adding it now.")
                 connection.execute(text("ALTER TABLE holding ADD COLUMN custom_section VARCHAR(100) DEFAULT 'Default'"))
                 print("MIGRATION: Successfully added 'custom_section' column.")
+
+        # Check presentation table
+        presentation_columns = [c['name'] for c in inspector.get_columns('presentation')]
+        with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            if 'created_at' not in presentation_columns:
+                print("MIGRATION: 'created_at' column not found in presentation. Adding it now.")
+                connection.execute(text('ALTER TABLE presentation ADD COLUMN created_at TIMESTAMP'))
+                connection.execute(text("UPDATE presentation SET created_at = NOW() WHERE created_at IS NULL"))
+                connection.execute(text('ALTER TABLE presentation ALTER COLUMN created_at SET NOT NULL'))
+                print("MIGRATION: Successfully added 'created_at' column.")
+
+            if 'voting_ends_at' not in presentation_columns:
+                print("MIGRATION: 'voting_ends_at' column not found in presentation. Adding it now.")
+                connection.execute(text('ALTER TABLE presentation ADD COLUMN voting_ends_at TIMESTAMP'))
+                connection.execute(text("UPDATE presentation SET voting_ends_at = created_at WHERE voting_ends_at IS NULL"))
+                connection.execute(text('ALTER TABLE presentation ALTER COLUMN voting_ends_at SET NOT NULL'))
+                print("MIGRATION: Successfully added 'voting_ends_at' column.")
+
         return True
     except Exception as e:
         print(f"CRITICAL: Failed to execute migration: {e}")
@@ -367,24 +402,17 @@ def update_holding_section():
 @app.route('/api/presentations', methods=['GET'])
 def get_presentations():
     role = request.args.get('role', 'guest')
-    presentations = Presentation.query.order_by(Presentation.id.desc()).all()
-    
-    results = []
-    for p in presentations:
-        presentation_dict = {
-            'id': p.id,
-            'title': p.title,
-            'url': p.url,
-            'ticker': p.ticker,
-            'action': p.action,
-        }
-        if role == 'admin':
-            presentation_dict['votesFor'] = p.votes_for
-            presentation_dict['votesAgainst'] = p.votes_against
-        
-        results.append(presentation_dict)
-        
-    return jsonify(results)
+    try:
+        presentations = Presentation.query.order_by(Presentation.id.desc()).all()
+        return jsonify([p.to_dict(role=role) for p in presentations])
+    except ProgrammingError:
+        db.session.rollback()
+        if add_columns_if_missing():
+            presentations = Presentation.query.order_by(Presentation.id.desc()).all()
+            return jsonify([p.to_dict(role=role) for p in presentations])
+        else:
+            return jsonify({"error": "Database schema out of date."}), 500
+
 
 @app.route('/api/presentations', methods=['POST'])
 def add_presentation():
@@ -392,13 +420,18 @@ def add_presentation():
     if not all(k in data for k in ['title', 'url', 'ticker', 'action']):
         return jsonify({"error": "Missing required fields"}), 400
     
+    now = datetime.utcnow()
+    voting_ends = now + timedelta(hours=48)
+    
     new_presentation = Presentation(
         title=data['title'], url=data['url'],
-        ticker=data['ticker'].upper(), action=data['action']
+        ticker=data['ticker'].upper(), action=data['action'],
+        created_at=now,
+        voting_ends_at=voting_ends
     )
     db.session.add(new_presentation)
     db.session.commit()
-    return jsonify(new_presentation.to_dict()), 201
+    return jsonify(new_presentation.to_dict(role='admin')), 201
 
 @app.route('/api/presentations/<int:presentation_id>/vote', methods=['POST'])
 def vote_on_presentation(presentation_id):
@@ -409,6 +442,9 @@ def vote_on_presentation(presentation_id):
     if not presentation:
         return jsonify({"error": "Presentation not found"}), 404
         
+    if datetime.utcnow() > presentation.voting_ends_at:
+        return jsonify({"error": "Voting for this presentation has closed."}), 403
+        
     if vote_type == 'for':
         presentation.votes_for += 1
     elif vote_type == 'against':
@@ -417,7 +453,7 @@ def vote_on_presentation(presentation_id):
         return jsonify({"error": "Invalid vote type"}), 400
         
     db.session.commit()
-    return jsonify(presentation.to_dict())
+    return jsonify(presentation.to_dict(role='admin'))
 
 # Page Content Management
 @app.route('/api/page/<page_name>', methods=['GET'])
