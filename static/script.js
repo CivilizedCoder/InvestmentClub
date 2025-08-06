@@ -3,16 +3,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBAL STATE ---
     let stockChart;
     let currentStockData = null;
-    let portfolio = [];
+    let transactions = []; // This now holds all transactions, not just current holdings
     let recentSearches = [];
     const MAX_RECENT_SEARCHES = 5;
-    let holdingToDeleteId = null;
+    let transactionToDeleteId = null;
     let currentUserRole = 'guest'; // 'guest', 'member', or 'admin'
 
     // --- INITIALIZATION ---
     async function initialize() {
         initializeEventListeners();
-        await fetchPortfolio();
+        await fetchTransactions();
         updateUIVisibility();
         activateTab('home');
         fetchPageContent('about');
@@ -233,27 +233,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- DATABASE & PORTFOLIO LOGIC ---
-    async function fetchPortfolio() {
+    async function fetchTransactions() {
         try {
             const response = await fetch('/api/portfolio');
-            if (!response.ok) throw new Error('Failed to fetch portfolio');
-            portfolio = await response.json();
+            if (!response.ok) throw new Error('Failed to fetch transactions');
+            transactions = await response.json();
         } catch (error) {
-            console.error("Fetch portfolio error:", error);
-            portfolio = [];
+            console.error("Fetch transactions error:", error);
+            transactions = [];
         }
     }
 
-    async function addStockToPortfolio() {
+    async function addTransaction() {
         if (!currentStockData) return;
         const isReal = document.getElementById('isRealCheckbox').checked;
+        const transactionType = document.querySelector('input[name="transactionType"]:checked').value;
         
-        const newHolding = {
+        const newTransaction = {
             symbol: currentStockData.info.symbol,
             longName: currentStockData.info.longName,
             isReal: isReal,
             price: currentStockData.market_data.currentPrice,
-            sector: currentStockData.info.sector || 'Other'
+            sector: currentStockData.info.sector || 'Other',
+            transactionType: transactionType
         };
 
         if (isReal) {
@@ -262,85 +264,147 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
-            newHolding.purchaseType = purchaseType;
-            newHolding.date = document.getElementById('purchaseDate').value;
+            newTransaction.purchaseType = purchaseType;
+            newTransaction.date = document.getElementById('purchaseDate').value;
 
             if (purchaseType === 'quantity') {
-                newHolding.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
-                newHolding.price = parseFloat(document.getElementById('purchasePrice').value);
-                if (isNaN(newHolding.quantity) || isNaN(newHolding.price) || !newHolding.date) {
-                    alert("Please fill in all purchase details."); return;
+                newTransaction.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
+                newTransaction.price = parseFloat(document.getElementById('purchasePrice').value);
+                if (isNaN(newTransaction.quantity) || isNaN(newTransaction.price) || !newTransaction.date) {
+                    alert("Please fill in all transaction details."); return;
                 }
-                newHolding.dollarValue = newHolding.quantity * newHolding.price;
+                newTransaction.dollarValue = newTransaction.quantity * newTransaction.price;
             } else { // 'value'
-                newHolding.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
+                newTransaction.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
                 const purchasePrice = parseFloat(document.getElementById('purchasePriceByValue').value);
 
-                if (isNaN(newHolding.dollarValue) || isNaN(purchasePrice) || !newHolding.date) {
-                    alert("Please fill in all purchase details: Dollar Value, Price per Share, and Date.");
+                if (isNaN(newTransaction.dollarValue) || isNaN(purchasePrice) || !newTransaction.date) {
+                    alert("Please fill in all transaction details: Dollar Value, Price per Share, and Date.");
                     return;
                 }
-
-                newHolding.price = purchasePrice;
-
+                newTransaction.price = purchasePrice;
                 if (purchasePrice > 0) {
-                    newHolding.quantity = newHolding.dollarValue / purchasePrice;
+                    newTransaction.quantity = newTransaction.dollarValue / purchasePrice;
                 } else {
-                    newHolding.quantity = 0;
+                    newTransaction.quantity = 0;
                 }
             }
+        } else { // Watchlist item
+            newTransaction.quantity = 0;
+            newTransaction.dollarValue = 0;
+            newTransaction.price = currentStockData.market_data.currentPrice;
+            newTransaction.date = new Date().toISOString().split('T')[0];
         }
 
-        const response = await fetch('/api/portfolio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newHolding) });
+        const response = await fetch('/api/transaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newTransaction) });
+        
         if (response.ok) {
-            const addedHolding = await response.json();
-            portfolio.push(addedHolding);
-            alert(`${newHolding.symbol} has been added.`);
-            activateTab('portfolio');
+            const addedTransaction = await response.json();
+            transactions.push(addedTransaction);
+            alert(`${newTransaction.symbol} transaction has been added.`);
+            // Re-render the current tab to show the new data
+            const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
+            if (activeTab) activateTab(activeTab);
+
         } else {
-            alert("Failed to add holding.");
+            const err = await response.json();
+            alert(`Failed to add transaction: ${err.error}`);
         }
     }
 
     function promptForDelete(id) {
         if (currentUserRole !== 'admin') {
-            alert("Only admins can delete holdings.");
+            alert("Only admins can delete transactions.");
             return;
         }
-        holdingToDeleteId = id;
+        transactionToDeleteId = id;
         showConfirmationModal();
     }
 
     async function confirmDelete() {
-        if (holdingToDeleteId === null) return;
+        if (transactionToDeleteId === null) return;
         try {
-            const response = await fetch(`/api/portfolio/${holdingToDeleteId}`, { method: 'DELETE' });
+            const response = await fetch(`/api/transaction/${transactionToDeleteId}`, { method: 'DELETE' });
             if (response.ok) {
-                portfolio = portfolio.filter(h => h.id !== holdingToDeleteId);
+                transactions = transactions.filter(h => h.id !== transactionToDeleteId);
                 const currentTab = document.querySelector('.nav-link.active')?.dataset.tab;
                 if (currentTab) activateTab(currentTab);
             } else {
                 alert(`Failed to delete: ${(await response.json()).error}`);
             }
         } catch (error) {
-            console.error("Error deleting holding:", error);
+            console.error("Error deleting transaction:", error);
         } finally {
             hideConfirmationModal();
-            holdingToDeleteId = null;
+            transactionToDeleteId = null;
         }
     }
 
-    async function updateHoldingSection(holdingId, newSection) {
-        const holding = portfolio.find(h => h.id === holdingId);
-        if (holding) holding.customSection = newSection;
+    async function updateHoldingSection(symbol, newSection) {
+        // Optimistically update the local data
+        transactions.forEach(tx => {
+            if (tx.symbol === symbol) {
+                tx.customSection = newSection;
+            }
+        });
 
         await fetch('/api/portfolio/section', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: holdingId, section: newSection })
+            body: JSON.stringify({ symbol: symbol, section: newSection })
         });
     }
     
+    // --- PORTFOLIO AGGREGATION ---
+    function aggregatePortfolio(allTransactions) {
+        const portfolio = {}; // Keyed by symbol
+
+        // Create a copy and sort transactions by date to process them in order
+        const sortedTransactions = [...allTransactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        for (const tx of sortedTransactions) {
+            if (!tx.isReal) continue; // Skip watchlist items
+
+            // Initialize position if it's the first time we see this symbol
+            if (!portfolio[tx.symbol]) {
+                if (tx.transactionType === 'sell') {
+                    console.error(`Found a 'sell' transaction for ${tx.symbol} before any 'buy'. Skipping.`);
+                    continue;
+                }
+                portfolio[tx.symbol] = {
+                    symbol: tx.symbol,
+                    longName: tx.longName,
+                    sector: tx.sector,
+                    customSection: tx.customSection,
+                    quantity: 0,
+                    totalCost: 0,
+                };
+            }
+
+            const position = portfolio[tx.symbol];
+            
+            if (tx.transactionType === 'buy') {
+                position.quantity += tx.quantity;
+                position.totalCost += tx.dollarValue;
+            } else { // 'sell'
+                // Prevent division by zero if selling shares that were never bought (should be caught by backend)
+                if (position.quantity > 0) {
+                    const avgCostPerShare = position.totalCost / position.quantity;
+                    const costOfGoodsSold = avgCostPerShare * tx.quantity;
+                    
+                    position.quantity -= tx.quantity;
+                    position.totalCost -= costOfGoodsSold;
+                }
+            }
+            // Update the custom section to the latest one for this symbol
+            position.customSection = tx.customSection;
+        }
+
+        // Convert map to array and filter out zero-quantity positions
+        return Object.values(portfolio).filter(p => p.quantity > 0.00001);
+    }
+
+
     // --- CONTENT MANAGEMENT ---
     async function fetchPageContent(pageName) {
         try {
@@ -632,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         valueInputs.classList.toggle('hidden', isQuantity);
                     });
                 });
-                addToPortfolioBtn.addEventListener('click', addStockToPortfolio);
+                addToPortfolioBtn.addEventListener('click', addTransaction);
             }
         }
     
@@ -656,6 +720,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div id="realPurchaseInputs" class="space-y-4 hidden">
                     <div class="flex items-center space-x-6">
+                        <label class="block text-sm font-medium text-gray-400">Transaction Type</label>
+                        <label class="flex items-center text-sm cursor-pointer">
+                            <input type="radio" name="transactionType" value="buy" class="form-radio" checked>
+                            <span class="ml-2">Buy</span>
+                        </label>
+                        <label class="flex items-center text-sm cursor-pointer">
+                            <input type="radio" name="transactionType" value="sell" class="form-radio">
+                            <span class="ml-2">Sell</span>
+                        </label>
+                    </div>
+                    <div class="flex items-center space-x-6">
+                        <label class="block text-sm font-medium text-gray-400">Entry Method</label>
                         <label class="flex items-center text-sm cursor-pointer">
                             <input type="radio" name="purchaseType" value="value" class="form-radio" checked>
                             <span class="ml-2">By Dollar Value</span>
@@ -673,12 +749,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div id="quantityInputs" class="hidden">
                         <div class="grid grid-cols-2 gap-4">
-                            <input type="number" step="any" id="purchaseQuantity" placeholder="Quantity (e.g., 10)" class="form-input">
+                            <input type="number" step="any" id="purchaseQuantity" placeholder="Quantity (e.g., 10.5)" class="form-input">
                             <input type="number" step="any" id="purchasePrice" placeholder="Price per Share" class="form-input">
                         </div>
                     </div>
                     <div>
-                        <label for="purchaseDate" class="block text-sm font-medium text-gray-400 mb-1">Purchase Date</label>
+                        <label for="purchaseDate" class="block text-sm font-medium text-gray-400 mb-1">Transaction Date</label>
                         <input type="date" id="purchaseDate" value="${today}" class="form-input">
                     </div>
                 </div>
@@ -747,41 +823,45 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryList = document.getElementById('portfolioSummaryList');
         if (!summaryList) return;
 
-        // Don't show loading message on silent auto-refresh
-        if (summaryList.innerHTML === '') {
-            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings yet.</p>';
-        }
+        const watchlistItems = transactions.filter(t => !t.isReal);
+        const currentPositions = aggregatePortfolio(transactions);
 
-        if (portfolio.length === 0) {
-            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings yet.</p>';
+        if (watchlistItems.length === 0 && currentPositions.length === 0) {
+            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings or watchlist items yet.</p>';
             return;
         }
 
         try {
-            const tickers = [...new Set(portfolio.map(p => p.symbol))];
+            const tickers = [...new Set(currentPositions.map(p => p.symbol).concat(watchlistItems.map(t => t.symbol)))];
             const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
             if (!response.ok) throw new Error('Failed to fetch quotes');
             
             const quotes = await response.json();
-            summaryList.innerHTML = ''; // Clear previous content before re-rendering
-            portfolio.forEach(holding => {
-                const quote = quotes[holding.symbol];
-                const currentPrice = quote?.currentPrice ?? holding.price;
-                const priceChange = currentPrice - (quote?.previousClose ?? holding.price);
+            summaryList.innerHTML = ''; // Clear previous content
+
+            const allItems = [...currentPositions, ...watchlistItems];
+
+            allItems.forEach(item => {
+                const quote = quotes[item.symbol];
+                const isWatchlist = !item.hasOwnProperty('totalCost');
+                const price = isWatchlist ? item.price : item.totalCost / item.quantity;
+
+                const currentPrice = quote?.currentPrice ?? price;
+                const priceChange = currentPrice - (quote?.previousClose ?? price);
                 const priceChangePercent = (quote?.previousClose ?? 0) > 0 ? (priceChange / quote.previousClose) * 100 : 0;
                 const changeColor = priceChange >= 0 ? 'text-green-400' : 'text-red-400';
                 
                 const card = document.createElement('div');
-                card.className = 'summary-card';
-                card.dataset.symbol = holding.symbol;
+                card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
+                card.dataset.symbol = item.symbol;
                 card.innerHTML = `
-                    <button class="delete-btn" data-id="${holding.id}" title="Delete"><i class="fas fa-times-circle"></i></button>
+                    ${isWatchlist ? `<button class="delete-btn" data-id="${item.id}" title="Delete"><i class="fas fa-times-circle"></i></button>` : ''}
                     <div class="summary-card-content">
                         <div class="flex justify-between items-center">
-                            <p class="font-bold text-lg">${holding.symbol}</p>
+                            <p class="font-bold text-lg">${item.symbol}</p>
                             <p class="font-semibold text-lg">${currentPrice != null ? '$' + currentPrice.toFixed(2) : 'N/A'}</p>
                         </div>
-                        <p class="text-sm text-gray-400 truncate">${holding.longName}</p>
+                        <p class="text-sm text-gray-400 truncate">${item.longName}</p>
                         <div class="text-right mt-2 ${changeColor}">
                             <span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span>
                             <span> (${priceChangePercent.toFixed(2)}%)</span>
@@ -796,7 +876,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTransactionHistory() {
         const listEl = document.getElementById('transactionList');
-        const realTransactions = portfolio.filter(item => item.isReal);
+        const realTransactions = transactions.filter(item => item.isReal);
 
         listEl.innerHTML = '';
         if (realTransactions.length === 0) {
@@ -808,11 +888,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('tr');
             row.className = 'border-b border-gray-800 hover:bg-gray-800';
             const purchaseDetail = item.purchaseType === 'quantity' ? `${(item.quantity || 0).toFixed(4)} shares` : `$${(item.dollarValue || 0).toFixed(2)}`;
+            const typeClass = item.transactionType === 'buy' ? 'text-green-400' : 'text-red-400';
+            const typeText = item.transactionType.charAt(0).toUpperCase() + item.transactionType.slice(1);
+            
             row.innerHTML = `
                 <td class="p-3">${item.date || 'N/A'}</td>
                 <td class="p-3 font-bold"><a href="#" class="transaction-link text-cyan-400 hover:underline" data-symbol="${item.symbol}">${item.symbol}</a></td>
                 <td class="p-3">${item.longName}</td>
-                <td class="p-3">Buy</td>
+                <td class="p-3 font-bold ${typeClass}">${typeText}</td>
                 <td class="p-3 text-right">${purchaseDetail}</td>
                 <td class="p-3 text-right">$${(item.price || 0).toFixed(2)}</td>
                 <td class="p-3 text-right font-semibold">$${(item.dollarValue || 0).toFixed(2)}</td>
@@ -834,7 +917,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
         if (!listEl) return;
         
-        // Avoid the "Loading..." message on periodic refreshes
         const isInitialLoad = listEl.innerHTML === '' || listEl.querySelector('.card');
 
         if (isInitialLoad) {
@@ -855,7 +937,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const actionColor = p.action === 'Buy' ? 'text-green-400' : 'text-red-400';
                 
                 let voteInfoHtml = '';
-                // Vote counts are present for admins OR if voting is closed for members
                 if (p.votesFor !== undefined && p.votesAgainst !== undefined) {
                     voteInfoHtml = `
                         <div class="flex items-center space-x-4">
@@ -866,7 +947,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 let voteButtons = '';
-                // Only show vote buttons if voting is open and user is not a guest
                 if (p.isVotingOpen && currentUserRole !== 'guest') {
                     voteButtons = `
                         <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i></button>
@@ -901,17 +981,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderPortfolioDashboard(newSectionName = null) {
         const sectionsEl = document.getElementById('portfolioSections');
-        const realHoldings = portfolio.filter(p => p.isReal && p.quantity > 0);
+        const currentPositions = aggregatePortfolio(transactions);
 
-        if (realHoldings.length === 0 && !newSectionName) {
+        if (currentPositions.length === 0 && !newSectionName) {
             sectionsEl.innerHTML = '<p class="card text-center text-gray-500">No real holdings to analyze.</p>';
+            updatePortfolioTotals([]);
             return;
         }
 
-        const quotes = await fetchQuotesForHoldings(realHoldings);
-        const sections = groupHoldingsBySection(realHoldings, quotes);
+        const quotes = await fetchQuotesForHoldings(currentPositions);
+        const sections = groupHoldingsBySection(currentPositions, quotes);
         const totalPortfolioValue = Object.values(sections).reduce((sum, sec) => sum + sec.currentValue, 0);
-
 
         if (newSectionName && !sections[newSectionName]) {
             sections[newSectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
@@ -920,11 +1000,11 @@ document.addEventListener('DOMContentLoaded', () => {
         sectionsEl.innerHTML = '';
         Object.keys(sections).sort().forEach(sectionName => {
             const section = sections[sectionName];
-            const sectionEl = createPortfolioSection(name, section, totalPortfolioValue);
+            const sectionEl = createPortfolioSection(sectionName, section, totalPortfolioValue);
             sectionsEl.appendChild(sectionEl);
         });
 
-        updatePortfolioTotals(sections);
+        updatePortfolioTotals(Object.values(sections));
         initializeDragAndDrop();
     }
 
@@ -939,17 +1019,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return response.ok ? await response.json() : {};
     }
 
-    function groupHoldingsBySection(holdings, quotes) {
+    function groupHoldingsBySection(positions, quotes) {
         const sections = {};
-        holdings.forEach(h => {
-            const sectionName = h.customSection || h.sector || 'Uncategorized';
+        positions.forEach(p => {
+            const sectionName = p.customSection || p.sector || 'Uncategorized';
             if (!sections[sectionName]) {
                 sections[sectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
             }
-            const quote = quotes[h.symbol];
-            const currentValue = (h.quantity || 0) * (quote?.currentPrice ?? h.price ?? 0);
-            sections[sectionName].holdings.push({ ...h, currentValue });
-            sections[sectionName].totalCost += h.dollarValue || 0;
+            const quote = quotes[p.symbol];
+            const currentValue = (p.quantity || 0) * (quote?.currentPrice ?? (p.totalCost / p.quantity));
+            
+            sections[sectionName].holdings.push({ ...p, currentValue });
+            sections[sectionName].totalCost += p.totalCost || 0;
             sections[sectionName].currentValue += currentValue;
         });
         return sections;
@@ -986,13 +1067,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createHoldingCard(h, sectionValue) {
-        const gainLoss = h.currentValue - h.dollarValue;
-        const gainLossPercent = h.dollarValue > 0 ? (gainLoss / h.dollarValue) * 100 : 0;
+        const gainLoss = h.currentValue - h.totalCost;
+        const gainLossPercent = h.totalCost > 0 ? (gainLoss / h.totalCost) * 100 : 0;
         const gainLossColor = gainLoss >= 0 ? 'text-green-400' : 'text-red-400';
         const holdingWeight = sectionValue > 0 ? (h.currentValue / sectionValue) * 100 : 0;
 
         return `
-            <div class="card bg-gray-800 p-3 flex justify-between items-center" data-id="${h.id}">
+            <div class="card bg-gray-800 p-3 flex justify-between items-center" data-symbol="${h.symbol}">
                 <div>
                     <p class="font-bold text-lg">${h.symbol}</p>
                     <p class="text-sm text-gray-400">${(h.quantity || 0).toFixed(4)} shares</p>
@@ -1014,7 +1095,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updatePortfolioTotals(sections) {
         let totalValue = 0, totalCost = 0;
-        Object.values(sections).forEach(s => {
+        sections.forEach(s => {
             totalValue += s.currentValue;
             totalCost += s.totalCost;
         });
@@ -1041,9 +1122,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 animation: 150,
                 ghostClass: 'sortable-ghost',
                 onEnd: function (evt) {
-                    const holdingId = parseInt(evt.item.dataset.id);
+                    const symbol = evt.item.dataset.symbol;
                     const newSectionName = evt.to.closest('.portfolio-section').dataset.sectionName;
-                    updateHoldingSection(holdingId, newSectionName);
+                    updateHoldingSection(symbol, newSectionName);
                 },
             });
         });

@@ -4,7 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 import yfinance as yf
 import pandas as pd
 import os
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, func
 from sqlalchemy.exc import ProgrammingError
 import math
 from datetime import datetime, timedelta
@@ -49,10 +49,11 @@ class Holding(db.Model):
     is_real = db.Column(db.Boolean, nullable=False)
     purchase_type = db.Column(db.String(20))
     quantity = db.Column(db.Float)
-    price = db.Column(db.Float) # Price per share at purchase
-    dollar_value = db.Column(db.Float) # Total cost at purchase
+    price = db.Column(db.Float) # Price per share at purchase/sale
+    dollar_value = db.Column(db.Float) # Total value of transaction
     date = db.Column(db.String(20))
     custom_section = db.Column(db.String(100), nullable=True, default='Default')
+    transaction_type = db.Column(db.String(10), nullable=False, default='buy')
 
 
     def to_dict(self):
@@ -61,7 +62,8 @@ class Holding(db.Model):
             'sector': self.sector, 'isReal': self.is_real, 
             'purchaseType': self.purchase_type, 'quantity': self.quantity, 
             'price': self.price, 'dollarValue': self.dollar_value, 'date': self.date,
-            'customSection': self.custom_section
+            'customSection': self.custom_section,
+            'transactionType': self.transaction_type
         }
 
 class Presentation(db.Model):
@@ -127,6 +129,11 @@ def add_columns_if_missing():
                 print("MIGRATION: 'custom_section' column not found in holding. Adding it now.")
                 connection.execute(text("ALTER TABLE holding ADD COLUMN custom_section VARCHAR(100) DEFAULT 'Default'"))
                 print("MIGRATION: Successfully added 'custom_section' column.")
+
+            if 'transaction_type' not in holding_columns:
+                print("MIGRATION: 'transaction_type' column not found in holding. Adding it now.")
+                connection.execute(text("ALTER TABLE holding ADD COLUMN transaction_type VARCHAR(10) NOT NULL DEFAULT 'buy'"))
+                print("MIGRATION: Successfully added 'transaction_type' column.")
 
         # Check presentation table
         presentation_columns = [c['name'] for c in inspector.get_columns('presentation')]
@@ -325,19 +332,33 @@ def get_stock_data(ticker_symbol):
 # --- DATABASE API ENDPOINTS ---
 
 @app.route('/api/portfolio', methods=['GET'])
-def get_holdings():
+def get_transactions():
     try:
-        holdings = Holding.query.all()
-        return jsonify([h.to_dict() for h in holdings])
+        transactions = Holding.query.order_by(Holding.date.asc()).all()
+        return jsonify([t.to_dict() for t in transactions])
     except ProgrammingError:
         add_columns_if_missing()
-        return jsonify([])
+        # After migration, try again
+        transactions = Holding.query.order_by(Holding.date.asc()).all()
+        return jsonify([t.to_dict() for t in transactions])
 
 
-@app.route('/api/portfolio', methods=['POST'])
-def add_holding():
+@app.route('/api/transaction', methods=['POST'])
+def add_transaction():
     data = request.get_json()
     
+    # --- VALIDATION ---
+    if data.get('transactionType') == 'sell':
+        # Calculate current holdings for the symbol
+        buys = db.session.query(func.sum(Holding.quantity)).filter_by(symbol=data['symbol'], transaction_type='buy', is_real=True).scalar() or 0
+        sells = db.session.query(func.sum(Holding.quantity)).filter_by(symbol=data['symbol'], transaction_type='sell', is_real=True).scalar() or 0
+        current_quantity = buys - sells
+        
+        # Check if the sale is possible
+        sell_quantity = float(data.get('quantity', 0))
+        if sell_quantity > current_quantity:
+            return jsonify({"error": f"Cannot sell {sell_quantity} shares. You only own {current_quantity:.4f}."}), 400
+
     try:
         stock_info = yf.Ticker(data['symbol']).info
         sector = stock_info.get('sector', 'Other')
@@ -346,57 +367,65 @@ def add_holding():
         sector = 'Other'
         long_name = data['longName']
 
-    def create_holding_instance():
+    def create_transaction_instance():
         instance = Holding(
             symbol=data['symbol'], long_name=long_name, sector=sector,
             is_real=data['isReal'], purchase_type=data.get('purchaseType'),
             quantity=data.get('quantity'), price=data.get('price'),
             dollar_value=data.get('dollarValue'), date=data.get('date'),
-            custom_section=data.get('customSection', sector or 'Default')
+            custom_section=data.get('customSection', sector or 'Default'),
+            transaction_type=data.get('transactionType', 'buy')
         )
-        if data.get('purchaseType') == 'value' and data.get('price') and data['price'] > 0:
-            instance.quantity = data['dollarValue'] / data['price']
+        # For buys by value, calculate quantity. Sells should always have quantity.
+        if instance.transaction_type == 'buy' and instance.purchase_type == 'value' and instance.price and instance.price > 0:
+            instance.quantity = instance.dollar_value / instance.price
         return instance
 
-    new_holding = create_holding_instance()
+    new_transaction = create_transaction_instance()
     
     try:
-        db.session.add(new_holding)
+        db.session.add(new_transaction)
         db.session.commit()
     except ProgrammingError:
         db.session.rollback()
         if add_columns_if_missing():
             db.session.remove()
-            holding_to_retry = create_holding_instance()
-            db.session.add(holding_to_retry)
+            transaction_to_retry = create_transaction_instance()
+            db.session.add(transaction_to_retry)
             db.session.commit()
-            return jsonify(holding_to_retry.to_dict()), 201
+            return jsonify(transaction_to_retry.to_dict()), 201
         else:
             return jsonify({"error": "Database schema is out of date and could not be automatically updated."}), 500
 
-    return jsonify(new_holding.to_dict()), 201
+    return jsonify(new_transaction.to_dict()), 201
 
-@app.route('/api/portfolio/<int:holding_id>', methods=['DELETE'])
-def delete_holding(holding_id):
-    holding = Holding.query.get(holding_id)
-    if holding is None: return jsonify({"error": "Holding not found"}), 404
-    db.session.delete(holding)
+@app.route('/api/transaction/<int:transaction_id>', methods=['DELETE'])
+def delete_transaction(transaction_id):
+    transaction = Holding.query.get(transaction_id)
+    if transaction is None: return jsonify({"error": "Transaction not found"}), 404
+    db.session.delete(transaction)
     db.session.commit()
-    return jsonify({"message": "Holding deleted successfully"})
+    return jsonify({"message": "Transaction deleted successfully"})
 
 @app.route('/api/portfolio/section', methods=['POST'])
 def update_holding_section():
     data = request.get_json()
-    holding_id = data.get('id')
+    symbol = data.get('symbol')
     new_section = data.get('section')
+
+    if not symbol or not new_section:
+        return jsonify({"error": "Missing symbol or section"}), 400
     
-    holding = Holding.query.get(holding_id)
-    if not holding:
-        return jsonify({"error": "Holding not found"}), 404
+    # Find all transactions for the given symbol and update their section
+    transactions_to_update = Holding.query.filter_by(symbol=symbol).all()
+    if not transactions_to_update:
+        return jsonify({"error": "No holdings found for this symbol"}), 404
         
-    holding.custom_section = new_section
+    for t in transactions_to_update:
+        t.custom_section = new_section
+        
     db.session.commit()
-    return jsonify(holding.to_dict())
+    return jsonify({"message": f"Section for {symbol} updated to {new_section}"})
 
 # Presentations
 @app.route('/api/presentations', methods=['GET'])
