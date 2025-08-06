@@ -3,7 +3,7 @@
 /* Use the 'Inter' font defined in the HTML for a modern, clean look */
 body {
     font-family: 'Inter', sans-serif;
-    transition: background-color 0.3s ease;
+    transition: background-color: 0.3s ease;
 }
 
 /* Base styling for dashboard cards */
@@ -364,9 +364,12 @@ body {
     min-height: 80vh; /* Give plenty of space for absolute positioning */
 }
 
+.content-grid.is-editing .card-header {
+    display: flex;
+}
+
 .content-grid.is-editing .content-card,
 .content-grid.is-editing .content-text-box {
-    cursor: move;
     border: 1px dashed #06B6D4;
 }
 
@@ -379,6 +382,7 @@ body {
     resize: both;
     overflow: hidden;
     position: absolute;
+    padding-top: 30px; /* Make space for the header */
 }
 
 /* Styling for text-only boxes */
@@ -390,34 +394,43 @@ body {
     overflow: auto;
     position: absolute;
     border: 1px solid transparent; /* Invisible border by default */
+    padding-top: 30px; /* Make space for the header */
 }
 
-.card-delete-btn {
+/* Header for draggable items */
+.card-header {
     display: none; /* Hidden by default */
     position: absolute;
-    top: 4px;
-    right: 4px;
-    background: #DC2626;
-    color: white;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 28px;
+    background-color: rgba(0, 0, 0, 0.3);
+    cursor: move;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0 4px;
+    box-sizing: border-box;
+}
+
+.card-delete-btn, .card-text-size-btn {
+    background: none;
     border: none;
-    border-radius: 50%;
+    color: white;
     width: 24px;
     height: 24px;
     font-size: 14px;
     line-height: 24px;
     text-align: center;
     cursor: pointer;
-    z-index: 10;
     opacity: 0.8;
+    margin-left: 4px;
 }
 
-.card-delete-btn:hover {
+.card-delete-btn:hover, .card-text-size-btn:hover {
     opacity: 1;
-}
-
-/* Show delete button on all content items when in edit mode */
-.content-grid.is-editing .card-delete-btn {
-    display: block;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
 }
 
 .content-card-image-wrapper {

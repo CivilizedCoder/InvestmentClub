@@ -65,6 +65,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 cardDeleteBtn.closest('.content-card, .content-text-box').remove();
                 return;
             }
+            
+            // Listener for text size button
+            const textSizeBtn = e.target.closest('.card-text-size-btn');
+            if (textSizeBtn) {
+                const element = textSizeBtn.closest('.content-card, .content-text-box');
+                const textContainer = element.querySelector('.content-card-text') || element;
+                const currentSize = window.getComputedStyle(textContainer).fontSize;
+                const newSize = prompt("Enter new font size (e.g., '16px', '1.2rem'):", currentSize);
+                if (newSize) {
+                    textContainer.style.fontSize = newSize;
+                }
+                return;
+            }
 
             const card = e.target.closest('.summary-card');
             if (card && card.dataset.symbol) {
@@ -354,7 +367,15 @@ document.addEventListener('DOMContentLoaded', () => {
             addCardBtn.classList.add('hidden');
             addTextBtn.classList.add('hidden');
             
-            // Serialize the content, including positions and sizes
+            // Detach drag handlers and remove contenteditable attributes
+            contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
+                const header = el.querySelector('.card-header');
+                if (header) header.removeEventListener('mousedown', onStartDragCard);
+                const textEl = el.querySelector('.content-card-text') || el;
+                textEl.contentEditable = false;
+            });
+
+            // Serialize the content, including positions, sizes, and font sizes
             let finalHtml = '';
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 finalHtml += el.outerHTML;
@@ -366,11 +387,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ content: finalHtml })
             });
 
-            // Detach drag handlers
-            contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
-                el.removeEventListener('mousedown', onStartDragCard);
-            });
-
         } else {
             // --- ENABLE EDITING ---
             editBtn.textContent = 'Save';
@@ -378,11 +394,13 @@ document.addEventListener('DOMContentLoaded', () => {
             editBtn.classList.add('button-success');
             addCardBtn.classList.remove('hidden');
             addTextBtn.classList.remove('hidden');
-            contentDiv.focus();
 
-            // Attach drag handlers
+            // Attach drag handlers and set contenteditable
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
-                el.addEventListener('mousedown', onStartDragCard);
+                const header = el.querySelector('.card-header');
+                if(header) header.addEventListener('mousedown', onStartDragCard);
+                const textEl = el.querySelector('.content-card-text') || el;
+                textEl.contentEditable = true;
             });
         }
     }
@@ -394,56 +412,53 @@ document.addEventListener('DOMContentLoaded', () => {
         const textContent = prompt("Please enter the text content for the card:");
         if (textContent === null) return;
 
-        const cardHtml = `
-            <div class="content-card" style="top: 10px; left: 10px; width: 300px; height: 400px;">
+        const card = document.createElement('div');
+        card.className = 'content-card';
+        card.style.cssText = 'top: 10px; left: 10px; width: 300px; height: 400px;';
+        card.innerHTML = `
+            <div class="card-header">
+                <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
                 <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
-                <div class="content-card-image-wrapper">
-                    <img src="${imageUrl}" alt="User uploaded content">
-                </div>
-                <div class="content-card-text" contenteditable="true">
-                    <p>${textContent}</p>
-                </div>
+            </div>
+            <div class="content-card-image-wrapper">
+                <img src="${imageUrl}" alt="User uploaded content">
+            </div>
+            <div class="content-card-text" contenteditable="true">
+                <p>${textContent}</p>
             </div>`;
 
         const contentDiv = document.getElementById(`${pageName}PageContent`);
-        contentDiv.insertAdjacentHTML('beforeend', cardHtml);
+        contentDiv.appendChild(card);
         
-        const newCard = contentDiv.lastElementChild;
-        newCard.addEventListener('mousedown', onStartDragCard);
+        card.querySelector('.card-header').addEventListener('mousedown', onStartDragCard);
     }
     
     function addTextBox(pageName) {
         const textContent = prompt("Please enter the text for the box:");
         if (textContent === null) return;
 
-        const cardHtml = `
-            <div class="content-text-box" style="top: 10px; left: 10px; width: 300px; height: 150px;" contenteditable="true">
+        const textBox = document.createElement('div');
+        textBox.className = 'content-text-box';
+        textBox.style.cssText = 'top: 10px; left: 10px; width: 300px; height: 150px;';
+        textBox.contentEditable = true;
+        textBox.innerHTML = `
+            <div class="card-header">
+                 <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
                  <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
-                <p>${textContent}</p>
-            </div>`;
+            </div>
+            <p>${textContent}</p>`;
 
         const contentDiv = document.getElementById(`${pageName}PageContent`);
-        contentDiv.insertAdjacentHTML('beforeend', cardHtml);
+        contentDiv.appendChild(textBox);
         
-        const newCard = contentDiv.lastElementChild;
-        newCard.addEventListener('mousedown', onStartDragCard);
+        textBox.querySelector('.card-header').addEventListener('mousedown', onStartDragCard);
     }
     
     // --- CARD DRAGGING LOGIC ---
     function onStartDragCard(e) {
-        // Allow clicks on delete button or editable text
-        if (e.target.closest('.card-delete-btn') || e.target.isContentEditable) {
-            return;
-        }
-        
-        // Check if the click is on the resize handle area
-        const rect = e.currentTarget.getBoundingClientRect();
-        if (e.clientX > rect.right - 15 && e.clientY > rect.bottom - 15) {
-            return;
-        }
-
+        // Only drag via the header
         e.preventDefault();
-        const card = e.currentTarget;
+        const card = e.currentTarget.parentElement;
         const initialX = e.clientX;
         const initialY = e.clientY;
         const initialTop = card.offsetTop;
