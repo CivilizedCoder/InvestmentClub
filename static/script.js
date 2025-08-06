@@ -70,29 +70,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const textSizeBtn = e.target.closest('.card-text-size-btn');
             if (textSizeBtn) {
                 const element = textSizeBtn.closest('.content-card, .content-text-box');
-                const textContainer = element.querySelector('.content-card-text, .text-box-content');
+                const textContainer = element.querySelector('.content-card-text') || element;
                 const currentSize = window.getComputedStyle(textContainer).fontSize;
                 const newSize = prompt("Enter new font size (e.g., '16px', '1.2rem'):", currentSize);
                 if (newSize) {
                     textContainer.style.fontSize = newSize;
-                }
-                return;
-            }
-            
-            // Listener for proportion lock button
-            const lockBtn = e.target.closest('.card-lock-btn');
-            if (lockBtn) {
-                const card = lockBtn.closest('.content-card');
-                if (card) {
-                    card.classList.toggle('proportions-locked');
-                    const icon = lockBtn.querySelector('i');
-                    if (card.classList.contains('proportions-locked')) {
-                        icon.classList.remove('fa-unlock-alt');
-                        icon.classList.add('fa-lock');
-                    } else {
-                        icon.classList.remove('fa-lock');
-                        icon.classList.add('fa-unlock-alt');
-                    }
                 }
                 return;
             }
@@ -385,16 +367,15 @@ document.addEventListener('DOMContentLoaded', () => {
             addCardBtn.classList.add('hidden');
             addTextBtn.classList.add('hidden');
             
-            // Detach drag handlers, remove contenteditable attributes, and clean up classes
+            // Detach drag handlers and remove contenteditable attributes
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
-                el.classList.remove('proportions-locked'); // Clean up state
                 const header = el.querySelector('.card-header');
                 if (header) header.removeEventListener('mousedown', onStartDragCard);
-                const textEl = el.querySelector('.content-card-text, .text-box-content');
-                if(textEl) textEl.contentEditable = false;
+                const textEl = el.querySelector('.content-card-text') || el;
+                textEl.contentEditable = false;
             });
 
-            // Serialize the content
+            // Serialize the content, including positions, sizes, and font sizes
             let finalHtml = '';
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 finalHtml += el.outerHTML;
@@ -414,27 +395,12 @@ document.addEventListener('DOMContentLoaded', () => {
             addCardBtn.classList.remove('hidden');
             addTextBtn.classList.remove('hidden');
 
-            // Attach drag handlers and set contenteditable for all cards, including old ones
+            // Attach drag handlers and set contenteditable
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
-                // Ensure header exists for all elements
-                let header = el.querySelector('.card-header');
-                if (!header) {
-                    header = document.createElement('div');
-                    header.className = 'card-header';
-                    let buttons = `
-                        <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
-                        <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
-                    `;
-                    if (el.classList.contains('content-card')) {
-                         buttons = `<button class="card-lock-btn" title="Lock Proportions"><i class="fas fa-unlock-alt"></i></button>` + buttons;
-                    }
-                    header.innerHTML = buttons;
-                    el.prepend(header);
-                }
-                
-                header.addEventListener('mousedown', onStartDragCard);
-                const textEl = el.querySelector('.content-card-text, .text-box-content');
-                if(textEl) textEl.contentEditable = true;
+                const header = el.querySelector('.card-header');
+                if(header) header.addEventListener('mousedown', onStartDragCard);
+                const textEl = el.querySelector('.content-card-text') || el;
+                textEl.contentEditable = true;
             });
         }
     }
@@ -451,7 +417,6 @@ document.addEventListener('DOMContentLoaded', () => {
         card.style.cssText = 'top: 10px; left: 10px; width: 300px; height: 400px;';
         card.innerHTML = `
             <div class="card-header">
-                <button class="card-lock-btn" title="Lock Proportions"><i class="fas fa-unlock-alt"></i></button>
                 <button class="card-text-size-btn"><i class="fas fa-text-height"></i></button>
                 <button class="card-delete-btn"><i class="fas fa-times-circle"></i></button>
             </div>

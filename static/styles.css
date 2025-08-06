@@ -1,5 +1,3 @@
-/* static/style.css */
-
 /* Use the 'Inter' font defined in the HTML for a modern, clean look */
 body {
     font-family: 'Inter', sans-serif;
@@ -379,11 +377,9 @@ body {
     border-radius: 0.5rem;
     display: flex;
     flex-direction: column;
-    overflow: auto;
+    resize: both;
+    overflow: hidden;
     position: absolute;
-    resize: both; /* Default resize is both */
-    min-width: 200px;
-    min-height: 150px;
 }
 
 /* Styling for text-only boxes */
@@ -394,8 +390,6 @@ body {
     overflow: hidden;
     position: absolute;
     border: 1px solid transparent; /* Invisible border by default */
-    display: flex;
-    flex-direction: column;
 }
 
 /* Header for draggable items - now an overlay */
@@ -424,7 +418,7 @@ body {
 }
 
 
-.card-delete-btn, .card-text-size-btn, .card-lock-btn {
+.card-delete-btn, .card-text-size-btn {
     background: none;
     border: none;
     color: white;
@@ -438,7 +432,7 @@ body {
     margin-left: 4px;
 }
 
-.card-delete-btn:hover, .card-text-size-btn:hover, .card-lock-btn:hover {
+.card-delete-btn:hover, .card-text-size-btn:hover {
     opacity: 1;
     background-color: rgba(255, 255, 255, 0.2);
     border-radius: 4px;
@@ -446,7 +440,7 @@ body {
 
 .content-card-image-wrapper {
     width: 100%;
-    height: 15rem; /* Default height */
+    height: 60%; 
     position: relative;
     flex-shrink: 0;
 }
@@ -460,23 +454,14 @@ body {
 .content-card-text {
     padding: 1rem;
     flex-grow: 1;
-    overflow: auto;
-    resize: none; /* No resize by default */
+    overflow-y: auto;
+    height: 40%;
 }
 
 .text-box-content {
     padding: 1rem;
     height: 100%;
     overflow-y: auto;
-}
-
-/* Two-stage resize logic */
-.content-card.proportions-locked {
-    resize: none; /* Disable main resize */
-}
-
-.content-card.proportions-locked .content-card-text {
-    resize: vertical; /* Enable vertical resize on text only */
 }
 
 
