@@ -812,17 +812,17 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderPresentations() {
         const listEl = document.getElementById('presentationList');
         const submitCard = document.getElementById('submitPresentationCard');
-
+    
         if (currentUserRole === 'guest') {
             submitCard.style.display = 'none';
         } else {
             submitCard.style.display = 'block';
         }
-
+    
         if (!listEl) return;
         listEl.innerHTML = '<p class="card">Loading presentations...</p>';
         try {
-            const response = await fetch('/api/presentations');
+            const response = await fetch(`/api/presentations?role=${currentUserRole}`);
             const presentations = await response.json();
             listEl.innerHTML = '';
             if (presentations.length === 0) {
@@ -833,8 +833,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 const card = document.createElement('div');
                 card.className = 'card';
                 const actionColor = p.action === 'Buy' ? 'text-green-400' : 'text-red-400';
-                const voteButtons = `<button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button><button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>`;
-                card.innerHTML = `<h4 class="text-xl font-bold">${p.title}</h4><p class="text-sm text-gray-400 mb-3">Proposing to <span class="font-bold ${actionColor}">${p.action} ${p.ticker}</span></p><a href="${p.url}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline mb-4 block">View Presentation</a><div class="flex items-center justify-end space-x-4">${voteButtons}</div>`;
+                
+                let voteButtons = '';
+                if (currentUserRole === 'admin') {
+                    voteButtons = `
+                        <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i><span class="ml-2">${p.votesFor}</span></button>
+                        <button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i><span class="ml-2">${p.votesAgainst}</span></button>
+                    `;
+                } else {
+                    voteButtons = `
+                        <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i></button>
+                        <button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i></button>
+                    `;
+                }
+
+                card.innerHTML = `
+                    <h4 class="text-xl font-bold">${p.title}</h4>
+                    <p class="text-sm text-gray-400 mb-3">Proposing to <span class="font-bold ${actionColor}">${p.action} ${p.ticker}</span></p>
+                    <a href="${p.url}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline mb-4 block">View Presentation</a>
+                    <div class="flex items-center justify-end space-x-4">${voteButtons}</div>
+                `;
                 listEl.appendChild(card);
             });
             listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));

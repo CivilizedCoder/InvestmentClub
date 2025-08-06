@@ -327,8 +327,25 @@ def update_holding_section():
 # Presentations
 @app.route('/api/presentations', methods=['GET'])
 def get_presentations():
+    role = request.args.get('role', 'guest')
     presentations = Presentation.query.order_by(Presentation.id.desc()).all()
-    return jsonify([p.to_dict() for p in presentations])
+    
+    results = []
+    for p in presentations:
+        presentation_dict = {
+            'id': p.id,
+            'title': p.title,
+            'url': p.url,
+            'ticker': p.ticker,
+            'action': p.action,
+        }
+        if role == 'admin':
+            presentation_dict['votesFor'] = p.votes_for
+            presentation_dict['votesAgainst'] = p.votes_against
+        
+        results.append(presentation_dict)
+        
+    return jsonify(results)
 
 @app.route('/api/presentations', methods=['POST'])
 def add_presentation():
