@@ -221,20 +221,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- USER PERMISSIONS ---
     function updateUIVisibility() {
         const role = currentUser.role;
-        const guestTabs = ['home', 'search', 'internships', 'about', 'presentations'];
-        const memberTabs = [...guestTabs, 'portfolio', 'transactions'];
+        const guestTabs = ['home', 'search', 'internships', 'about'];
+        const memberTabs = ['home', 'search', 'portfolio', 'transactions', 'presentations', 'internships', 'about', 'account'];
         const adminTabs = [...memberTabs, 'admin'];
 
         let visibleTabs;
-        switch (role) {
-            case 'member': visibleTabs = memberTabs; break;
-            case 'admin': visibleTabs = adminTabs; break;
-            default: visibleTabs = guestTabs; // guest
+        if (!currentUser.loggedIn) {
+            visibleTabs = guestTabs;
+        } else {
+            switch (role) {
+                case 'member': visibleTabs = memberTabs; break;
+                case 'admin': visibleTabs = adminTabs; break;
+                default: visibleTabs = guestTabs; // guest role
+            }
         }
-
+        
         // Show/hide nav links
         document.querySelectorAll('.nav-link').forEach(link => {
-            link.style.display = visibleTabs.includes(link.dataset.tab) ? 'block' : 'none';
+            if (visibleTabs.includes(link.dataset.tab)) {
+                link.classList.remove('hidden');
+            } else {
+                link.classList.add('hidden');
+            }
         });
 
         // If current tab is now hidden, switch to home
@@ -252,12 +260,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(addSectionBtn) {
             addSectionBtn.style.display = isAdmin ? 'block' : 'none';
         }
-
-        // Re-render content that depends on role
-        renderSearchTab(currentStockData);
-        renderPresentations();
-        renderPortfolioDashboard();
-        renderTransactionHistory();
     }
 
 
@@ -278,6 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'portfolio': renderPortfolioDashboard(); break;
             case 'transactions': renderTransactionHistory(); break;
             case 'presentations': renderPresentations(); break;
+            case 'account': renderAccountPage(); break;
             case 'admin': renderAdminPanel(); break;
             case 'internships':
                 calculateAndSetGridHeight(document.getElementById('internshipsPageContent'));
