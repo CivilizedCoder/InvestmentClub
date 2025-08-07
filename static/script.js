@@ -546,10 +546,10 @@ document.addEventListener('DOMContentLoaded', () => {
             editBtn.classList.add('button-success');
             addCardBtn.classList.remove('hidden');
             addTextBtn.classList.remove('hidden');
+            adjustContentGridHeight(contentDiv); // Adjust height when entering edit mode
 
             // Attach drag handlers and set contenteditable
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
-                // Ensure every card has a header with controls when editing starts
                 if (!el.querySelector('.card-header')) {
                     const header = document.createElement('div');
                     header.className = 'card-header';
@@ -607,6 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
         contentDiv.appendChild(card);
         
         card.querySelector('.card-header').addEventListener('mousedown', onStartDragCard);
+        adjustContentGridHeight(contentDiv);
     }
     
     function addTextBox(pageName) {
@@ -629,18 +630,40 @@ document.addEventListener('DOMContentLoaded', () => {
         contentDiv.appendChild(textBox);
         
         textBox.querySelector('.card-header').addEventListener('mousedown', onStartDragCard);
+        adjustContentGridHeight(contentDiv);
     }
     
-    // --- CARD DRAGGING LOGIC ---
+    // --- DYNAMIC CONTENT GRID & DRAGGING LOGIC ---
+    function adjustContentGridHeight(gridElement) {
+        if (!gridElement || !gridElement.classList.contains('is-editing')) {
+            return;
+        }
+    
+        let maxHeight = 0;
+        const padding = 50; // Extra space at the bottom
+        const children = gridElement.querySelectorAll('.content-card, .content-text-box');
+    
+        children.forEach(child => {
+            const childBottom = child.offsetTop + child.offsetHeight;
+            if (childBottom > maxHeight) {
+                maxHeight = childBottom;
+            }
+        });
+    
+        // Set a minimum height even if empty, to make it a droppable area
+        const minGridHeight = 500; 
+        gridElement.style.minHeight = `${Math.max(minGridHeight, maxHeight + padding)}px`;
+    }
+
     function onStartDragCard(e) {
-        // Only drag via the header
         e.preventDefault();
         const card = e.currentTarget.parentElement;
+        const grid = card.parentElement;
         const initialX = e.clientX;
         const initialY = e.clientY;
         const initialTop = card.offsetTop;
         const initialLeft = card.offsetLeft;
-        const gridSnap = 10; // Snap to 10px grid
+        const gridSnap = 10;
 
         function onDrag(moveEvent) {
             const dx = moveEvent.clientX - initialX;
@@ -649,17 +672,19 @@ document.addEventListener('DOMContentLoaded', () => {
             let newLeft = initialLeft + dx;
             let newTop = initialTop + dy;
 
-            // Snap to grid
             newLeft = Math.round(newLeft / gridSnap) * gridSnap;
             newTop = Math.round(newTop / gridSnap) * gridSnap;
 
             card.style.left = `${newLeft}px`;
             card.style.top = `${newTop}px`;
+
+            adjustContentGridHeight(grid);
         }
 
         function onStopDrag() {
             document.removeEventListener('mousemove', onDrag);
             document.removeEventListener('mouseup', onStopDrag);
+            adjustContentGridHeight(grid);
         }
 
         document.addEventListener('mousemove', onDrag);

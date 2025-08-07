@@ -363,17 +363,17 @@ body {
 /* Default (View Mode) state for the content grid */
 .content-grid {
     position: relative;
-    max-height: 80vh; /* Set a max height for scrolling in view mode */
-    min-height: 300px; /* Give it a minimum height so it's visible */
-    overflow-y: auto; /* Enable vertical scrolling */
-    padding-right: 1rem; /* Add some padding for the scrollbar */
+    height: 75vh; /* Set a fixed height for view mode */
+    overflow-y: auto; /* Enable vertical scrolling within this container */
+    padding: 1rem;
+    border: 1px solid transparent;
 }
 
-/* Edit Mode: Allow the container to grow freely */
+/* Edit Mode: The grid becomes a "bottomless canvas" */
 .content-grid.is-editing {
-    max-height: none; /* Remove max height */
-    min-height: 150vh; /* Give plenty of vertical space for editing */
-    overflow-y: visible; /* Let the main page scroll if needed */
+    height: auto; /* Allow height to be determined by content */
+    min-height: 75vh; /* Ensure it's at least as tall as in view mode */
+    overflow-y: visible; /* Prevent internal scrollbars */
     border: 1px dashed #06B6D4;
 }
 
