@@ -498,8 +498,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             const contentDiv = document.getElementById(`${pageName}PageContent`);
             contentDiv.innerHTML = data.content;
-            // Set initial height after content is loaded
-            calculateAndSetGridHeight(contentDiv);
+    
+            const images = contentDiv.querySelectorAll('img');
+            if (images.length === 0) {
+                // If no images, calculate height immediately
+                calculateAndSetGridHeight(contentDiv);
+            } else {
+                // If there are images, wait for them to load
+                const promises = Array.from(images).map(img => {
+                    return new Promise((resolve) => {
+                        // Resolve on load or error to ensure we don't wait forever
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                        // Handle cached images that might not fire 'load'
+                        if (img.complete) {
+                            resolve();
+                        }
+                    });
+                });
+                await Promise.all(promises);
+                // Now that images are loaded, calculate the correct height
+                calculateAndSetGridHeight(contentDiv);
+            }
         } catch (error) {
             console.error(`Error fetching ${pageName} content:`, error);
         }
