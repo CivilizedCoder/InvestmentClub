@@ -18,6 +18,12 @@ body {
 }
 
 /* --- SIDEBAR NAVIGATION --- */
+.sidebar-logo {
+    height: 40px; /* Adjust height as needed */
+    width: auto; /* Maintain aspect ratio */
+    margin-bottom: 1rem; /* Space below the logo */
+}
+
 .nav-link {
     display: block;
     padding: 0.75rem 1rem;
