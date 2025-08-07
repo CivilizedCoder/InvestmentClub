@@ -140,19 +140,40 @@ with app.app_context():
     # Create all database tables if they don't exist
     db.create_all()
 
-    # Automatic Admin User Creation on first startup
-    if db.session.query(User).count() == 0:
-        print("INFO: No users found in the database. Attempting to create initial admin user.")
-        admin_user = os.environ.get('ADMIN_USERNAME')
-        admin_pass = os.environ.get('ADMIN_PASSWORD')
-        if admin_user and admin_pass:
-            new_admin = User(username=admin_user, role='admin')
-            new_admin.set_password(admin_pass)
+    # Automatic Admin User Creation/Promotion on startup
+    admin_username = "Timothy" # Set the designated admin username
+    admin_password = os.environ.get('ADMIN_PASSWORD')
+    
+    if admin_username:
+        # Find if a user with the admin username already exists.
+        user = User.query.filter_by(username=admin_username).first()
+        
+        if user:
+            # If the user exists but is not an admin, promote them.
+            if user.role != 'admin':
+                print(f"INFO: User '{admin_username}' found, promoting to admin.")
+                user.role = 'admin'
+                db.session.commit()
+                print(f"SUCCESS: User '{admin_username}' is now an admin.")
+            # If they are already an admin, do nothing.
+            else:
+                 print(f"INFO: Admin user '{admin_username}' already exists with correct role.")
+
+        # If the user does not exist at all, create them.
+        elif admin_password:
+            print(f"INFO: Admin user '{admin_username}' not found. Creating new admin user.")
+            new_admin = User(username=admin_username, role='admin')
+            new_admin.set_password(admin_password)
             db.session.add(new_admin)
             db.session.commit()
-            print(f"SUCCESS: Admin user '{admin_user}' created automatically.")
+            print(f"SUCCESS: Admin user '{admin_username}' created automatically.")
+        
+        # If the user doesn't exist and no password is provided
         else:
-            print("WARNING: ADMIN_USERNAME and/or ADMIN_PASSWORD environment variables not set. No admin user created.")
+            print(f"WARNING: Admin user '{admin_username}' not found, and ADMIN_PASSWORD is not set. Cannot create admin user.")
+    else:
+        # This case should not be reached since the username is hardcoded, but kept for safety.
+        print("WARNING: admin_username is not set. Skipping admin user setup.")
 
 # Teardown function to ensure database sessions are closed after each request.
 @app.teardown_appcontext
