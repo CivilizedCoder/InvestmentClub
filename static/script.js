@@ -17,9 +17,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Fetch user status first to determine permissions before loading data
         await fetchUserStatus(); 
         
-        // Only fetch sensitive data if logged in
-        if (currentUser.loggedIn) {
-            await fetchTransactions();
+        // Fetch data based on login status
+        if (currentUser.loggedIn && currentUser.role !== 'guest') {
+            await fetchTransactions(); // Members/Admins get the full portfolio
+        } else {
+            await fetchWatchlist(); // Guests get only the public watchlist
         }
         
         // Update UI based on permissions and then activate the default tab
@@ -312,8 +314,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/api/portfolio');
             if (!response.ok) {
-                // If unauthorized (401), it will be caught, and transactions will remain empty.
-                // This is expected for logged-out users.
                 if (response.status === 401) {
                     console.log("User not logged in. Cannot fetch transactions.");
                     transactions = [];
@@ -324,6 +324,17 @@ document.addEventListener('DOMContentLoaded', () => {
             transactions = await response.json();
         } catch (error) {
             console.error("Fetch transactions error:", error);
+            transactions = [];
+        }
+    }
+
+    async function fetchWatchlist() {
+        try {
+            const response = await fetch('/api/watchlist');
+            if (!response.ok) throw new Error('Failed to fetch watchlist');
+            transactions = await response.json(); // Store watchlist in the same global array
+        } catch (error) {
+            console.error("Fetch watchlist error:", error);
             transactions = [];
         }
     }
@@ -896,23 +907,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderPortfolioSummary() {
         const summaryList = document.getElementById('portfolioSummaryList');
-        if (!summaryList) return;
-        
-        if (!currentUser.loggedIn || currentUser.role === 'guest') {
-            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">Please log in as a Member or Admin to see the portfolio.</p>';
-            return;
+        const summaryTitle = document.querySelector('#portfolioSummary h3');
+        if (!summaryList || !summaryTitle) return;
+
+        // Adjust title based on user role
+        if (currentUser.loggedIn && currentUser.role !== 'guest') {
+            summaryTitle.textContent = 'Portfolio Snapshot';
+        } else {
+            summaryTitle.textContent = 'Club Watchlist';
         }
 
         const watchlistItems = transactions.filter(t => !t.isReal);
         const currentPositions = aggregatePortfolio(transactions);
 
         if (watchlistItems.length === 0 && currentPositions.length === 0) {
-            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No holdings or watchlist items yet.</p>';
+            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No items to display.</p>';
             return;
         }
 
         try {
-            const tickers = [...new Set(currentPositions.map(p => p.symbol).concat(watchlistItems.map(t => t.symbol)))];
+            const tickers = [...new Set(transactions.map(t => t.symbol))];
             const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
             if (!response.ok) throw new Error('Failed to fetch quotes');
             
@@ -935,7 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
                 card.dataset.symbol = item.symbol;
                 card.innerHTML = `
-                    ${isWatchlist ? `<button class="delete-transaction-btn" data-id="${item.id}" title="Delete"><i class="fas fa-times-circle"></i></button>` : ''}
+                    ${isWatchlist && currentUser.role === 'admin' ? `<button class="delete-transaction-btn" data-id="${item.id}" title="Delete"><i class="fas fa-times-circle"></i></button>` : ''}
                     <div class="summary-card-content">
                         <div class="flex justify-between items-center">
                             <p class="font-bold text-lg">${item.symbol}</p>

@@ -363,7 +363,9 @@ body {
 /* This is the main container for editable content */
 .content-grid {
     position: relative;
-    min-height: 150vh; /* Give plenty of vertical space for adding content */
+    max-height: 80vh; /* Set a max height */
+    overflow-y: auto; /* Enable vertical scrolling */
+    padding-right: 1rem; /* Add some padding for the scrollbar */
 }
 
 .content-grid.is-editing .card-header {
@@ -477,4 +479,25 @@ body {
 /* New rule for cards without text */
 .content-card.no-text .content-card-image-wrapper {
     height: 100%;
+}
+
+/* --- PRESENTATION VOTE BUTTONS --- */
+.vote-btn.voted {
+    background-color: #06B6D4; /* cyan-500 */
+    border: 1px solid #0891B2;
+    transform: scale(1.1);
+}
+.vote-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+/* --- ADMIN PANEL --- */
+.delete-user-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+.role-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
 }
