@@ -265,11 +265,10 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-@app.route('/account')
+@app.route('/account-partial')
 @login_required
-def account():
-    # This route just serves the container page; JS will load the content.
-    return render_template('index.html')
+def account_partial():
+    return render_template('account.html')
 
 # --- USER MANAGEMENT API ---
 @app.route('/api/users', methods=['GET'])
