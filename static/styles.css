@@ -364,7 +364,7 @@ body {
 .content-grid {
     position: relative;
     height: auto; /* Allow height to be determined by content */
-    min-height: 75vh; /* Ensure it has a large minimum height */
+    min-height: 80vh; /* Ensure it has a large minimum height */
     overflow: visible; /* Prevent internal scrollbars */
     padding: 0; /* Remove padding to avoid clipping content */
     border: 1px solid transparent; /* Invisible border by default */

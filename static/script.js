@@ -279,8 +279,12 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'transactions': renderTransactionHistory(); break;
             case 'presentations': renderPresentations(); break;
             case 'admin': renderAdminPanel(); break;
-            case 'internships': /* Fetched on init */ break;
-            case 'about': /* Fetched on init */ break;
+            case 'internships':
+                calculateAndSetGridHeight(document.getElementById('internshipsPageContent'));
+                break;
+            case 'about':
+                calculateAndSetGridHeight(document.getElementById('aboutPageContent'));
+                break;
         }
     }
 
