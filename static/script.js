@@ -29,8 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
         activateTab('home');
 
         // Fetch public content
-        fetchPageContent('about');
-        fetchPageContent('internships');
+        await fetchPageContent('about');
+        await fetchPageContent('internships');
         
         // Set an interval to auto-refresh prices every 10 seconds
         setInterval(autoRefreshPrices, 10000);
@@ -496,7 +496,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`/api/page/${pageName}`);
             const data = await response.json();
-            document.getElementById(`${pageName}PageContent`).innerHTML = data.content;
+            const contentDiv = document.getElementById(`${pageName}PageContent`);
+            contentDiv.innerHTML = data.content;
+            // Set initial height after content is loaded
+            calculateAndSetGridHeight(contentDiv);
         } catch (error) {
             console.error(`Error fetching ${pageName} content:`, error);
         }
@@ -546,7 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
             editBtn.classList.add('button-success');
             addCardBtn.classList.remove('hidden');
             addTextBtn.classList.remove('hidden');
-            adjustContentGridHeight(contentDiv); // Adjust height when entering edit mode
+            calculateAndSetGridHeight(contentDiv); // Adjust height when entering edit mode
 
             // Attach drag handlers and set contenteditable
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
@@ -607,7 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
         contentDiv.appendChild(card);
         
         card.querySelector('.card-header').addEventListener('mousedown', onStartDragCard);
-        adjustContentGridHeight(contentDiv);
+        calculateAndSetGridHeight(contentDiv);
     }
     
     function addTextBox(pageName) {
@@ -630,14 +633,12 @@ document.addEventListener('DOMContentLoaded', () => {
         contentDiv.appendChild(textBox);
         
         textBox.querySelector('.card-header').addEventListener('mousedown', onStartDragCard);
-        adjustContentGridHeight(contentDiv);
+        calculateAndSetGridHeight(contentDiv);
     }
     
     // --- DYNAMIC CONTENT GRID & DRAGGING LOGIC ---
-    function adjustContentGridHeight(gridElement) {
-        if (!gridElement || !gridElement.classList.contains('is-editing')) {
-            return;
-        }
+    function calculateAndSetGridHeight(gridElement) {
+        if (!gridElement) return;
     
         let maxHeight = 0;
         const padding = 50; // Extra space at the bottom
@@ -678,13 +679,13 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.left = `${newLeft}px`;
             card.style.top = `${newTop}px`;
 
-            adjustContentGridHeight(grid);
+            calculateAndSetGridHeight(grid);
         }
 
         function onStopDrag() {
             document.removeEventListener('mousemove', onDrag);
             document.removeEventListener('mouseup', onStopDrag);
-            adjustContentGridHeight(grid);
+            calculateAndSetGridHeight(grid);
         }
 
         document.addEventListener('mousemove', onDrag);
