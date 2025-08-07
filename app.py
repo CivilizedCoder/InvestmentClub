@@ -61,7 +61,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.String(20), nullable=False, default='member') # Roles: 'guest', 'member', 'admin'
+    role = db.Column(db.String(20), nullable=False, default='guest') # Roles: 'guest', 'member', 'admin'
     votes = db.relationship('Vote', backref='user', lazy=True, cascade="all, delete-orphan")
 
     def set_password(self, password):
@@ -268,7 +268,8 @@ def logout():
 @app.route('/account')
 @login_required
 def account():
-    return render_template('account.html')
+    # This route just serves the container page; JS will load the content.
+    return render_template('index.html')
 
 # --- USER MANAGEMENT API ---
 @app.route('/api/users', methods=['GET'])
@@ -332,21 +333,25 @@ def update_account():
     current_password = data.get('current_password')
     new_password = data.get('new_password')
 
+    user_updated = False
+
     # --- Update Username ---
     if new_username and new_username != current_user.username:
         if User.query.filter_by(username=new_username).first():
             return jsonify({"success": False, "error": "Username is already taken."}), 409
         current_user.username = new_username
-        db.session.commit()
-        return jsonify({"success": True, "message": "Username updated successfully."})
+        user_updated = True
 
     # --- Update Password ---
     if new_password:
         if not current_password or not current_user.check_password(current_password):
             return jsonify({"success": False, "error": "Current password is incorrect."}), 401
         current_user.set_password(new_password)
+        user_updated = True
+    
+    if user_updated:
         db.session.commit()
-        return jsonify({"success": True, "message": "Password updated successfully."})
+        return jsonify({"success": True, "message": "Account updated successfully."})
 
     return jsonify({"success": False, "error": "No changes requested."}), 400
 

@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- EVENT LISTENERS ---
     function initializeEventListeners() {
         document.getElementById('fetchBtn')?.addEventListener('click', executeSearch);
-        document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && executeSearch());
+        document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && executeSearch);
         document.getElementById('presentationForm')?.addEventListener('submit', handlePresentationSubmit);
 
         document.querySelectorAll('.nav-link').forEach(link => {
@@ -196,6 +196,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     () => confirmDeleteUser(userId)
                 );
             }
+
+            const setPasswordBtn = e.target.closest('.set-password-btn');
+            if (setPasswordBtn) {
+                const userId = setPasswordBtn.dataset.userId;
+                const username = setPasswordBtn.dataset.username;
+                const newPassword = prompt(`Enter new password for ${username}:`);
+                if (newPassword) {
+                    setUserPassword(userId, newPassword);
+                }
+            }
         });
         
         // --- INJECT AND SET UP 'ADD TEXT' BUTTONS ---
@@ -221,18 +231,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- USER PERMISSIONS ---
     function updateUIVisibility() {
         const role = currentUser.role;
+        const loggedIn = currentUser.loggedIn;
+
         const guestTabs = ['home', 'search', 'internships', 'about'];
         const memberTabs = ['home', 'search', 'portfolio', 'transactions', 'presentations', 'internships', 'about', 'account'];
         const adminTabs = [...memberTabs, 'admin'];
 
         let visibleTabs;
-        if (!currentUser.loggedIn) {
+        if (!loggedIn) {
             visibleTabs = guestTabs;
         } else {
             switch (role) {
                 case 'member': visibleTabs = memberTabs; break;
                 case 'admin': visibleTabs = adminTabs; break;
-                default: visibleTabs = guestTabs; // guest role
+                default: visibleTabs = [...guestTabs, 'account']; // Logged-in guests can see their account page
             }
         }
         
@@ -264,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // --- NAVIGATION & TAB CONTROL ---
-    function activateTab(tab) {
+    async function activateTab(tab) {
         document.querySelectorAll('.nav-link').forEach(lnk => lnk.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active-content'));
 
@@ -280,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'portfolio': renderPortfolioDashboard(); break;
             case 'transactions': renderTransactionHistory(); break;
             case 'presentations': renderPresentations(); break;
-            case 'account': renderAccountPage(); break;
+            case 'account': await renderAccountPage(); break;
             case 'admin': renderAdminPanel(); break;
             case 'internships':
                 calculateAndSetGridHeight(document.getElementById('internshipsPageContent'));
@@ -1331,8 +1343,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             ${roleOptions}
                         </select>
                     </td>
-                    <td class="p-3 text-center">
-                        <button class="delete-user-btn" data-user-id="${user.id}" data-username="${user.username}" ${isCurrentUser ? 'disabled' : ''}>
+                    <td class="p-3 text-center space-x-4">
+                        <button class="set-password-btn" data-user-id="${user.id}" data-username="${user.username}" ${isCurrentUser ? 'disabled' : ''} title="Set Password">
+                            <i class="fas fa-key text-yellow-500"></i>
+                        </button>
+                        <button class="delete-user-btn" data-user-id="${user.id}" data-username="${user.username}" ${isCurrentUser ? 'disabled' : ''} title="Delete User">
                             <i class="fas fa-trash-alt text-red-500"></i>
                         </button>
                     </td>
@@ -1363,6 +1378,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function setUserPassword(userId, newPassword) {
+        try {
+            const response = await fetch(`/api/users/${userId}/set-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: newPassword })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to set password.');
+            }
+            alert(result.message);
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        }
+    }
+
     async function confirmDeleteUser(userId) {
         try {
             const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
@@ -1377,6 +1409,62 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             hideConfirmationModal();
         }
+    }
+
+    // --- ACCOUNT PAGE ---
+    async function renderAccountPage() {
+        const accountContent = document.getElementById('accountContent');
+        if (!accountContent) return;
+
+        // Fetch the HTML content for the account page
+        const response = await fetch('/account');
+        accountContent.innerHTML = await response.text();
+
+        // Populate the user data
+        document.getElementById('accountUsername').textContent = currentUser.username;
+        document.getElementById('accountRole').textContent = currentUser.role;
+
+        // Add event listeners for the forms
+        document.getElementById('changeUsernameForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const newUsername = document.getElementById('newUsername').value;
+            if (!newUsername) return;
+
+            const res = await fetch('/api/account/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: newUsername })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(result.message);
+                await fetchUserStatus(); // Refresh user data globally
+                document.getElementById('accountUsername').textContent = currentUser.username;
+                e.target.reset();
+            } else {
+                alert(`Error: ${result.error}`);
+            }
+        });
+
+        document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            if (!currentPassword || !newPassword) return;
+
+            const res = await fetch('/api/account/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(result.message);
+                e.target.reset();
+            } else {
+                alert(`Error: ${result.error}`);
+            }
+        });
     }
 
 
