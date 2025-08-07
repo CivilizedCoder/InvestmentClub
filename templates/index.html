@@ -27,7 +27,10 @@
     <aside class="w-64 flex-shrink-0 bg-gray-800 p-4 flex flex-col h-screen sticky top-0">
         <div>
             <!-- Logo Display -->
-            <img src="{{ url_for('static', filename='InvestmentClubLogo.png') }}" alt="Investment Club Logo" class="sidebar-logo">
+            <div class="sidebar-header">
+                <img src="{{ url_for('static', filename='InvestmentClubLogo.png') }}" alt="Investment Club Logo" class="sidebar-logo">
+                <h1 class="sidebar-title">Investment Club</h1>
+            </div>
             
             <div class="search-bar-container mb-6">
                 <input type="text" id="tickerInput" class="form-input" placeholder="Ticker (e.g., AAPL)">
