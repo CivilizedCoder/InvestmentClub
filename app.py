@@ -67,7 +67,9 @@ class User(UserMixin, db.Model):
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
 
     def check_password(self, password):
-        return bcrypt.check_password_hash(self.password_hash, password)
+        # The stored hash must be encoded back to bytes for the bcrypt library to read the salt.
+        # This fixes the "Invalid salt" error in some environments.
+        return bcrypt.check_password_hash(self.password_hash.encode('utf-8'), password)
 
     def to_dict(self):
         return {'id': self.id, 'username': self.username, 'role': self.role}
