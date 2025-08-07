@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Investment Club</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center h-screen">
+    <div class="w-full max-w-md">
+        <form id="loginForm" class="card">
+            <h1 class="text-3xl font-bold text-cyan-400 mb-6 text-center">📈 Login</h1>
+            <div id="error-message" class="text-red-400 text-center mb-4 hidden"></div>
+            <div class="space-y-4">
+                <input type="text" id="username" name="username" class="form-input" placeholder="Username" required>
+                <input type="password" id="password" name="password" class="form-input" placeholder="Password" required>
+            </div>
+            <button type="submit" class="button-primary w-full mt-6">Login</button>
+            <p class="text-center text-gray-400 mt-4 text-sm">
+                Don't have an account? <a href="{{ url_for('register') }}" class="font-medium text-cyan-400 hover:underline">Register here</a>
+            </p>
+        </form>
+    </div>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.classList.add('hidden'); // Hide previous errors
+
+            const response = await fetch("{{ url_for('login') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                window.location.href = "{{ url_for('index') }}";
+            } else {
+                errorDiv.textContent = result.error || 'Login failed.';
+                errorDiv.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

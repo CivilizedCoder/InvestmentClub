@@ -7,14 +7,25 @@ document.addEventListener('DOMContentLoaded', () => {
     let recentSearches = [];
     const MAX_RECENT_SEARCHES = 5;
     let transactionToDeleteId = null;
-    let currentUserRole = 'guest'; // 'guest', 'member', or 'admin'
+    // The currentUser object is the single source of truth for user state.
+    let currentUser = { loggedIn: false, username: 'Guest', role: 'guest' };
 
     // --- INITIALIZATION ---
     async function initialize() {
         initializeEventListeners();
-        await fetchTransactions();
+        // Fetch user status first to determine permissions before loading data
+        await fetchUserStatus(); 
+        
+        // Only fetch sensitive data if logged in
+        if (currentUser.loggedIn) {
+            await fetchTransactions();
+        }
+        
+        // Update UI based on permissions and then activate the default tab
         updateUIVisibility();
         activateTab('home');
+
+        // Fetch public content
         fetchPageContent('about');
         fetchPageContent('internships');
         
@@ -22,6 +33,47 @@ document.addEventListener('DOMContentLoaded', () => {
         setInterval(autoRefreshPrices, 10000);
         // Set an interval to refresh presentation vote timers
         setInterval(renderPresentations, 60000);
+    }
+
+    // --- AUTHENTICATION & USER STATUS ---
+    async function fetchUserStatus() {
+        try {
+            const response = await fetch('/api/status');
+            const data = await response.json();
+            if (data.loggedIn) {
+                currentUser = {
+                    loggedIn: true,
+                    username: data.user.username,
+                    role: data.user.role
+                };
+            } else {
+                currentUser = { loggedIn: false, username: 'Guest', role: 'guest' };
+            }
+        } catch (error) {
+            console.error("Error fetching user status:", error);
+            currentUser = { loggedIn: false, username: 'Guest', role: 'guest' };
+        }
+        // Update the auth section in the sidebar
+        renderAuthSection();
+    }
+
+    function renderAuthSection() {
+        const authSection = document.getElementById('auth-section');
+        if (!authSection) return;
+
+        if (currentUser.loggedIn) {
+            authSection.innerHTML = `
+                <div class="text-center mb-2">
+                    <p class="font-semibold text-white">${currentUser.username}</p>
+                    <p class="text-sm text-gray-400 capitalize">${currentUser.role}</p>
+                </div>
+                <a href="/logout" class="button-secondary w-full text-center">Logout</a>
+            `;
+        } else {
+            authSection.innerHTML = `
+                <a href="/login" class="button-primary w-full text-center">Login / Register</a>
+            `;
+        }
     }
 
     // --- AUTO-REFRESHER ---
@@ -111,13 +163,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
-
-        document.getElementById('userRoleSelector').addEventListener('click', (e) => {
-            if (e.target.matches('.role-btn')) {
-                const newRole = e.target.dataset.role;
-                setCurrentUserRole(newRole);
-            }
-        });
         
         // --- INJECT AND SET UP 'ADD TEXT' BUTTONS ---
         const addCardButtons = document.querySelectorAll('#addAboutCardBtn, #addInternshipsCardBtn');
@@ -140,21 +185,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- USER PERMISSIONS ---
-    function setCurrentUserRole(role) {
-        currentUserRole = role;
-        document.querySelectorAll('.role-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.role === role);
-        });
-        updateUIVisibility();
-    }
-
     function updateUIVisibility() {
+        const role = currentUser.role;
         const guestTabs = ['home', 'search', 'internships', 'about'];
         const memberTabs = [...guestTabs, 'portfolio', 'transactions', 'presentations'];
         const adminTabs = [...memberTabs, 'admin'];
 
         let visibleTabs;
-        switch (currentUserRole) {
+        switch (role) {
             case 'member': visibleTabs = memberTabs; break;
             case 'admin': visibleTabs = adminTabs; break;
             default: visibleTabs = guestTabs; // guest
@@ -172,10 +210,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Show/hide admin buttons
-        const isAdmin = currentUserRole === 'admin';
+        const isAdmin = role === 'admin';
         document.getElementById('editAboutBtn').classList.toggle('hidden', !isAdmin);
         document.getElementById('editInternshipsBtn').classList.toggle('hidden', !isAdmin);
-        document.getElementById('addSectionBtn').style.display = isAdmin ? 'block' : 'none';
+        
+        const addSectionBtn = document.getElementById('addSectionBtn');
+        if(addSectionBtn) {
+            addSectionBtn.style.display = isAdmin ? 'block' : 'none';
+        }
 
         // Re-render content that depends on role
         renderSearchTab(currentStockData);
@@ -236,7 +278,16 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchTransactions() {
         try {
             const response = await fetch('/api/portfolio');
-            if (!response.ok) throw new Error('Failed to fetch transactions');
+            if (!response.ok) {
+                // If unauthorized (401), it will be caught, and transactions will remain empty.
+                // This is expected for logged-out users.
+                if (response.status === 401) {
+                    console.log("User not logged in. Cannot fetch transactions.");
+                    transactions = [];
+                    return;
+                }
+                throw new Error('Failed to fetch transactions');
+            }
             transactions = await response.json();
         } catch (error) {
             console.error("Fetch transactions error:", error);
@@ -259,7 +310,8 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         if (isReal) {
-            if (currentUserRole !== 'admin') {
+            // Frontend check for better UX, but the backend now enforces this rule.
+            if (currentUser.role !== 'admin') {
                 alert("Only admins can add real transactions.");
                 return;
             }
@@ -313,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function promptForDelete(id) {
-        if (currentUserRole !== 'admin') {
+        if (currentUser.role !== 'admin') {
             alert("Only admins can delete transactions.");
             return;
         }
@@ -632,7 +684,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
                 </div>
-                ${currentUserRole !== 'guest' ? getAddToPortfolioHtml(info.symbol) : ''}
+                ${currentUser.loggedIn ? getAddToPortfolioHtml(info.symbol) : ''}
                 <div class="space-y-4 mt-6">
                     ${createCollapsibleSection('Key Statistics', statsContent)}
                     ${createCollapsibleSection('Valuation Ratios', ratiosContent)}
@@ -677,7 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
             searchContent.querySelector('.timeframe-btn[data-range="1Y"]')?.classList.add('active');
             updateChartByRange(data.historical, '1Y');
 
-            if (currentUserRole !== 'guest') {
+            if (currentUser.loggedIn) {
                 const isRealCheckbox = document.getElementById('isRealCheckbox');
                 const realPurchaseInputs = document.getElementById('realPurchaseInputs');
                 const addToPortfolioBtn = document.getElementById('addToPortfolioBtn');
@@ -822,6 +874,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderPortfolioSummary() {
         const summaryList = document.getElementById('portfolioSummaryList');
         if (!summaryList) return;
+        
+        if (!currentUser.loggedIn) {
+            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">Please log in to see your portfolio.</p>';
+            return;
+        }
 
         const watchlistItems = transactions.filter(t => !t.isReal);
         const currentPositions = aggregatePortfolio(transactions);
@@ -876,6 +933,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTransactionHistory() {
         const listEl = document.getElementById('transactionList');
+        if (!listEl) return;
+
+        if (!currentUser.loggedIn) {
+            listEl.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">Please log in to see transactions.</td></tr>';
+            return;
+        }
+
         const realTransactions = transactions.filter(item => item.isReal);
 
         listEl.innerHTML = '';
@@ -909,7 +973,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const listEl = document.getElementById('presentationList');
         const submitCard = document.getElementById('submitPresentationCard');
     
-        if (currentUserRole === 'guest') {
+        if (currentUser.role === 'guest') {
             submitCard.style.display = 'none';
         } else {
             submitCard.style.display = 'block';
@@ -924,7 +988,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const response = await fetch(`/api/presentations?role=${currentUserRole}`);
+            // The role is no longer sent in the query. The backend knows the user's role.
+            const response = await fetch(`/api/presentations`);
             const presentations = await response.json();
             listEl.innerHTML = '';
             if (presentations.length === 0) {
@@ -947,7 +1012,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 let voteButtons = '';
-                if (p.isVotingOpen && currentUserRole !== 'guest') {
+                if (p.isVotingOpen && currentUser.role !== 'guest') {
                     voteButtons = `
                         <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i></button>
                         <button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i></button>
@@ -981,6 +1046,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function renderPortfolioDashboard(newSectionName = null) {
         const sectionsEl = document.getElementById('portfolioSections');
+        if (!sectionsEl) return;
+
+        if (!currentUser.loggedIn) {
+            sectionsEl.innerHTML = '<p class="card text-center text-gray-500">Please log in to see the portfolio dashboard.</p>';
+            updatePortfolioTotals([]);
+            return;
+        }
+
         const currentPositions = aggregatePortfolio(transactions);
 
         if (currentPositions.length === 0 && !newSectionName) {
@@ -1114,7 +1187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initializeDragAndDrop() {
-        if (currentUserRole !== 'admin') return;
+        if (currentUser.role !== 'admin') return;
         const holdingLists = document.querySelectorAll('.holding-list');
         holdingLists.forEach(list => {
             new Sortable(list, {

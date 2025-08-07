@@ -1,6 +1,8 @@
 # app.py
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_bcrypt import Bcrypt
 import yfinance as yf
 import pandas as pd
 import os
@@ -8,9 +10,19 @@ from sqlalchemy import inspect, text, func
 from sqlalchemy.exc import ProgrammingError
 import math
 from datetime import datetime, timedelta
+import click
 
-# Initialize the SQLAlchemy database extension WITHOUT an app instance.
+# Initialize extensions
 db = SQLAlchemy()
+bcrypt = Bcrypt()
+login_manager = LoginManager()
+login_manager.login_view = 'login' # Redirect to /login if @login_required fails
+login_manager.login_message_category = 'info'
+
+@login_manager.user_loader
+def load_user(user_id):
+    """Flask-Login hook to load a user from the database."""
+    return User.query.get(int(user_id))
 
 # Initialize the Flask application
 app = Flask(__name__,
@@ -34,13 +46,32 @@ if database_url:
         database_url += '?sslmode=require'
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a-fallback-secret-key-for-development') # Needed for sessions
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = { 'pool_pre_ping': True }
 
-# Now, associate the database with the app instance.
+# Now, associate the extensions with the app instance.
 db.init_app(app)
+bcrypt.init_app(app)
+login_manager.init_app(app)
 
 # --- DATABASE MODELS ---
+class User(UserMixin, db.Model):
+    """User model for authentication and roles."""
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='member') # Roles: 'member', 'admin'
+
+    def set_password(self, password):
+        self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+    def check_password(self, password):
+        return bcrypt.check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {'id': self.id, 'username': self.username, 'role': self.role}
+
 class Holding(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     symbol = db.Column(db.String(10), nullable=False)
@@ -111,6 +142,26 @@ with app.app_context():
 def shutdown_session(exception=None):
     db.session.remove()
 
+# --- CLI COMMANDS ---
+@app.cli.command("create-admin")
+def create_admin():
+    """Creates the initial admin user from environment variables."""
+    admin_user = os.environ.get('ADMIN_USERNAME')
+    admin_pass = os.environ.get('ADMIN_PASSWORD')
+    if not admin_user or not admin_pass:
+        print("Error: ADMIN_USERNAME and ADMIN_PASSWORD environment variables must be set.")
+        return
+
+    if User.query.filter_by(username=admin_user).first():
+        print(f"User '{admin_user}' already exists.")
+        return
+
+    new_admin = User(username=admin_user, role='admin')
+    new_admin.set_password(admin_pass)
+    db.session.add(new_admin)
+    db.session.commit()
+    print(f"Admin user '{admin_user}' created successfully.")
+
 # --- HELPER FUNCTIONS ---
 def add_columns_if_missing():
     """Checks for and adds missing columns to tables."""
@@ -174,10 +225,62 @@ def format_df_to_records(df):
     df = df.where(pd.notnull(df), None)
     return df.to_dict('records')
 
+# --- AUTHENTICATION ROUTES ---
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        data = request.get_json()
+        user = User.query.filter_by(username=data['username']).first()
+        if user and user.check_password(data['password']):
+            login_user(user, remember=True)
+            return jsonify({'success': True, 'user': user.to_dict()})
+        return jsonify({'success': False, 'error': 'Invalid username or password'}), 401
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        if not username or not password:
+            return jsonify({'success': False, 'error': 'Username and password are required.'}), 400
+        if User.query.filter_by(username=username).first():
+            return jsonify({'success': False, 'error': 'Username is already taken.'}), 400
+        
+        new_user = User(username=username, role='member') # New users are members by default
+        new_user.set_password(password)
+        db.session.add(new_user)
+        db.session.commit()
+        login_user(new_user, remember=True)
+        return jsonify({'success': True, 'user': new_user.to_dict()})
+    return render_template('register.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
 # --- HTML & API ROUTES ---
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/api/status')
+def get_status():
+    """Provides frontend with current user's login status and info."""
+    if current_user.is_authenticated:
+        return jsonify({
+            'loggedIn': True,
+            'user': current_user.to_dict()
+        })
+    else:
+        return jsonify({'loggedIn': False})
 
 @app.route('/api/quotes', methods=['POST'])
 def get_quotes():
@@ -332,6 +435,7 @@ def get_stock_data(ticker_symbol):
 # --- DATABASE API ENDPOINTS ---
 
 @app.route('/api/portfolio', methods=['GET'])
+@login_required
 def get_transactions():
     try:
         transactions = Holding.query.order_by(Holding.date.asc()).all()
@@ -344,8 +448,14 @@ def get_transactions():
 
 
 @app.route('/api/transaction', methods=['POST'])
+@login_required
 def add_transaction():
     data = request.get_json()
+    is_real = data.get('isReal', False)
+
+    # --- Secure Role-Based Validation ---
+    if is_real and current_user.role != 'admin':
+        return jsonify({"error": "Forbidden: Only admins can add real transactions."}), 403
     
     # --- VALIDATION ---
     if data.get('transactionType') == 'sell':
@@ -400,7 +510,10 @@ def add_transaction():
     return jsonify(new_transaction.to_dict()), 201
 
 @app.route('/api/transaction/<int:transaction_id>', methods=['DELETE'])
+@login_required
 def delete_transaction(transaction_id):
+    if current_user.role != 'admin':
+        return jsonify({"error": "Forbidden: Only admins can delete transactions."}), 403
     transaction = Holding.query.get(transaction_id)
     if transaction is None: return jsonify({"error": "Transaction not found"}), 404
     db.session.delete(transaction)
@@ -408,7 +521,10 @@ def delete_transaction(transaction_id):
     return jsonify({"message": "Transaction deleted successfully"})
 
 @app.route('/api/portfolio/section', methods=['POST'])
+@login_required
 def update_holding_section():
+    if current_user.role != 'admin':
+        return jsonify({"error": "Forbidden: Only admins can modify sections."}), 403
     data = request.get_json()
     symbol = data.get('symbol')
     new_section = data.get('section')
@@ -430,7 +546,11 @@ def update_holding_section():
 # Presentations
 @app.route('/api/presentations', methods=['GET'])
 def get_presentations():
-    role = request.args.get('role', 'guest')
+    # Determine role securely from the logged-in user
+    role = 'guest'
+    if current_user.is_authenticated:
+        role = current_user.role
+
     try:
         presentations = Presentation.query.order_by(Presentation.id.desc()).all()
         return jsonify([p.to_dict(role=role) for p in presentations])
@@ -444,6 +564,7 @@ def get_presentations():
 
 
 @app.route('/api/presentations', methods=['POST'])
+@login_required
 def add_presentation():
     data = request.get_json()
     if not all(k in data for k in ['title', 'url', 'ticker', 'action']):
@@ -463,6 +584,7 @@ def add_presentation():
     return jsonify(new_presentation.to_dict(role='admin')), 201
 
 @app.route('/api/presentations/<int:presentation_id>/vote', methods=['POST'])
+@login_required
 def vote_on_presentation(presentation_id):
     data = request.get_json()
     vote_type = data.get('voteType')
@@ -499,7 +621,10 @@ def get_page_content(page_name):
         return jsonify({'content': default_content.get(page_name, '<p>Content not found.</p>')})
 
 @app.route('/api/page/<page_name>', methods=['POST'])
+@login_required
 def update_page_content(page_name):
+    if current_user.role != 'admin':
+        return jsonify({"error": "Forbidden: Only admins can edit page content."}), 403
     data = request.get_json()
     new_content = data.get('content')
     
@@ -515,4 +640,5 @@ def update_page_content(page_name):
 
 
 if __name__ == '__main__':
+    # Use a different port if needed, e.g., app.run(debug=True, port=5001)
     app.run(debug=True)
