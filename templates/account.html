@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Account</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-200">
+    <!-- This is a partial template. It will be loaded into the main index.html -->
+    <div id="accountPage" class="space-y-8">
+        <div>
+            <h2 class="text-3xl font-bold mb-4">My Account</h2>
+            <div class="card kpi-grid">
+                <div>
+                    <p class="kpi-label">Username</p>
+                    <p id="accountUsername" class="kpi-value"></p>
+                </div>
+                <div>
+                    <p class="kpi-label">Role</p>
+                    <p id="accountRole" class="kpi-value capitalize"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Change Username -->
+        <div class="card">
+            <h3 class="text-xl font-bold mb-4">Change Username</h3>
+            <form id="changeUsernameForm" class="space-y-4">
+                <div>
+                    <label for="newUsername" class="block text-sm font-medium text-gray-400 mb-1">New Username</label>
+                    <input type="text" id="newUsername" class="form-input" required>
+                </div>
+                <div class="flex justify-end">
+                    <button type="submit" class="button-primary">Save Username</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Change Password -->
+        <div class="card">
+            <h3 class="text-xl font-bold mb-4">Change Password</h3>
+            <form id="changePasswordForm" class="space-y-4">
+                <div>
+                    <label for="currentPassword" class="block text-sm font-medium text-gray-400 mb-1">Current Password</label>
+                    <input type="password" id="currentPassword" class="form-input" required>
+                </div>
+                <div>
+                    <label for="newPassword" class="block text-sm font-medium text-gray-400 mb-1">New Password</label>
+                    <input type="password" id="newPassword" class="form-input" required>
+                </div>
+                <div class="flex justify-end">
+                    <button type="submit" class="button-primary">Save Password</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

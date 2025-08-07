@@ -265,7 +265,12 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-# --- USER MANAGEMENT API (for Admins) ---
+@app.route('/account')
+@login_required
+def account():
+    return render_template('account.html')
+
+# --- USER MANAGEMENT API ---
 @app.route('/api/users', methods=['GET'])
 @login_required
 def get_users():
@@ -296,6 +301,55 @@ def update_user_role(user_id):
     user_to_update.role = new_role
     db.session.commit()
     return jsonify({"message": "User role updated successfully.", "user": user_to_update.to_dict()})
+
+@app.route('/api/users/<int:user_id>/set-password', methods=['POST'])
+@login_required
+def set_user_password(user_id):
+    if current_user.role != 'admin':
+        return jsonify({"error": "Forbidden"}), 403
+    
+    user_to_update = User.query.get(user_id)
+    if not user_to_update:
+        return jsonify({"error": "User not found"}), 404
+    
+    if user_to_update.id == current_user.id:
+        return jsonify({"error": "Use the Account page to change your own password."}), 400
+
+    data = request.get_json()
+    new_password = data.get('password')
+    if not new_password or len(new_password) < 1:
+        return jsonify({"error": "Password cannot be empty."}), 400
+        
+    user_to_update.set_password(new_password)
+    db.session.commit()
+    return jsonify({"message": f"Password for {user_to_update.username} has been updated."})
+
+@app.route('/api/account/update', methods=['POST'])
+@login_required
+def update_account():
+    data = request.get_json()
+    new_username = data.get('username')
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+
+    # --- Update Username ---
+    if new_username and new_username != current_user.username:
+        if User.query.filter_by(username=new_username).first():
+            return jsonify({"success": False, "error": "Username is already taken."}), 409
+        current_user.username = new_username
+        db.session.commit()
+        return jsonify({"success": True, "message": "Username updated successfully."})
+
+    # --- Update Password ---
+    if new_password:
+        if not current_password or not current_user.check_password(current_password):
+            return jsonify({"success": False, "error": "Current password is incorrect."}), 401
+        current_user.set_password(new_password)
+        db.session.commit()
+        return jsonify({"success": True, "message": "Password updated successfully."})
+
+    return jsonify({"success": False, "error": "No changes requested."}), 400
+
 
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
 @login_required
@@ -483,6 +537,16 @@ def get_stock_data(ticker_symbol):
 
 # --- DATABASE API ENDPOINTS ---
 
+@app.route('/api/watchlist', methods=['GET'])
+def get_watchlist():
+    """A public endpoint to get only watchlist items."""
+    try:
+        watchlist_items = Holding.query.filter_by(is_real=False).order_by(Holding.date.asc()).all()
+        return jsonify([t.to_dict() for t in watchlist_items])
+    except Exception as e:
+        print(f"Error fetching watchlist: {e}")
+        return jsonify({"error": "Could not fetch watchlist"}), 500
+
 @app.route('/api/portfolio', methods=['GET'])
 @login_required
 def get_transactions():
@@ -594,6 +658,7 @@ def update_holding_section():
 
 # Presentations
 @app.route('/api/presentations', methods=['GET'])
+@login_required
 def get_presentations():
     try:
         presentations = Presentation.query.order_by(Presentation.created_at.desc()).all()

@@ -21,6 +21,12 @@
             <p class="text-center text-gray-400 mt-4 text-sm">
                 Don't have an account? <a href="{{ url_for('register') }}" class="font-medium text-cyan-400 hover:underline">Register here</a>
             </p>
+            <div class="my-4 flex items-center">
+                <div class="flex-grow border-t border-gray-600"></div>
+                <span class="flex-shrink mx-4 text-gray-400 text-sm">OR</span>
+                <div class="flex-grow border-t border-gray-600"></div>
+            </div>
+            <a href="{{ url_for('index') }}" class="button-secondary w-full text-center">Continue as Guest</a>
         </form>
     </div>
     <script>
