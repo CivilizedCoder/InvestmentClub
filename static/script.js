@@ -6,7 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let transactions = []; // This now holds all transactions, not just current holdings
     let recentSearches = [];
     const MAX_RECENT_SEARCHES = 5;
-    let transactionToDeleteId = null;
+    let actionToConfirm = null; // A function to execute when modal is confirmed
+
     // The currentUser object is the single source of truth for user state.
     let currentUser = { loggedIn: false, username: 'Guest', role: 'guest' };
 
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.loggedIn) {
                 currentUser = {
                     loggedIn: true,
+                    id: data.user.id,
                     username: data.user.username,
                     role: data.user.role
                 };
@@ -103,13 +105,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         document.getElementById('modalCancelBtn')?.addEventListener('click', () => hideConfirmationModal());
-        document.getElementById('modalConfirmBtn')?.addEventListener('click', () => confirmDelete());
+        document.getElementById('modalConfirmBtn')?.addEventListener('click', () => {
+            if (typeof actionToConfirm === 'function') {
+                actionToConfirm();
+            }
+        });
 
         document.querySelector('main').addEventListener('click', (e) => {
-            const deleteButton = e.target.closest('.delete-btn');
+            const deleteButton = e.target.closest('.delete-transaction-btn');
             if (deleteButton) {
                 e.stopPropagation();
-                promptForDelete(parseInt(deleteButton.dataset.id, 10));
+                const transactionId = parseInt(deleteButton.dataset.id, 10);
+                promptForConfirmation(
+                    'Delete Transaction',
+                    'Are you sure you want to delete this transaction? This action cannot be undone.',
+                    () => confirmDeleteTransaction(transactionId)
+                );
                 return;
             }
             
@@ -163,6 +174,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
+
+        // Event delegation for admin panel
+        document.getElementById('adminContent')?.addEventListener('click', e => {
+            const roleSelect = e.target.closest('.role-select');
+            if (roleSelect) {
+                const userId = roleSelect.dataset.userId;
+                const newRole = roleSelect.value;
+                updateUserRole(userId, newRole);
+            }
+
+            const deleteUserBtn = e.target.closest('.delete-user-btn');
+            if (deleteUserBtn) {
+                const userId = deleteUserBtn.dataset.userId;
+                const username = deleteUserBtn.dataset.username;
+                promptForConfirmation(
+                    'Delete User',
+                    `Are you sure you want to delete the user "${username}"? This action is permanent.`,
+                    () => confirmDeleteUser(userId)
+                );
+            }
+        });
         
         // --- INJECT AND SET UP 'ADD TEXT' BUTTONS ---
         const addCardButtons = document.querySelectorAll('#addAboutCardBtn, #addInternshipsCardBtn');
@@ -187,8 +219,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- USER PERMISSIONS ---
     function updateUIVisibility() {
         const role = currentUser.role;
-        const guestTabs = ['home', 'search', 'internships', 'about'];
-        const memberTabs = [...guestTabs, 'portfolio', 'transactions', 'presentations'];
+        const guestTabs = ['home', 'search', 'internships', 'about', 'presentations'];
+        const memberTabs = [...guestTabs, 'portfolio', 'transactions'];
         const adminTabs = [...memberTabs, 'admin'];
 
         let visibleTabs;
@@ -244,6 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'portfolio': renderPortfolioDashboard(); break;
             case 'transactions': renderTransactionHistory(); break;
             case 'presentations': renderPresentations(); break;
+            case 'admin': renderAdminPanel(); break;
             case 'internships': /* Fetched on init */ break;
             case 'about': /* Fetched on init */ break;
         }
@@ -364,21 +397,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function promptForDelete(id) {
-        if (currentUser.role !== 'admin') {
-            alert("Only admins can delete transactions.");
-            return;
-        }
-        transactionToDeleteId = id;
-        showConfirmationModal();
-    }
-
-    async function confirmDelete() {
-        if (transactionToDeleteId === null) return;
+    async function confirmDeleteTransaction(transactionId) {
+        if (transactionId === null) return;
         try {
-            const response = await fetch(`/api/transaction/${transactionToDeleteId}`, { method: 'DELETE' });
+            const response = await fetch(`/api/transaction/${transactionId}`, { method: 'DELETE' });
             if (response.ok) {
-                transactions = transactions.filter(h => h.id !== transactionToDeleteId);
+                transactions = transactions.filter(h => h.id !== transactionId);
                 const currentTab = document.querySelector('.nav-link.active')?.dataset.tab;
                 if (currentTab) activateTab(currentTab);
             } else {
@@ -388,7 +412,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Error deleting transaction:", error);
         } finally {
             hideConfirmationModal();
-            transactionToDeleteId = null;
         }
     }
 
@@ -875,8 +898,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryList = document.getElementById('portfolioSummaryList');
         if (!summaryList) return;
         
-        if (!currentUser.loggedIn) {
-            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">Please log in to see your portfolio.</p>';
+        if (!currentUser.loggedIn || currentUser.role === 'guest') {
+            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">Please log in as a Member or Admin to see the portfolio.</p>';
             return;
         }
 
@@ -912,7 +935,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
                 card.dataset.symbol = item.symbol;
                 card.innerHTML = `
-                    ${isWatchlist ? `<button class="delete-btn" data-id="${item.id}" title="Delete"><i class="fas fa-times-circle"></i></button>` : ''}
+                    ${isWatchlist ? `<button class="delete-transaction-btn" data-id="${item.id}" title="Delete"><i class="fas fa-times-circle"></i></button>` : ''}
                     <div class="summary-card-content">
                         <div class="flex justify-between items-center">
                             <p class="font-bold text-lg">${item.symbol}</p>
@@ -935,8 +958,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const listEl = document.getElementById('transactionList');
         if (!listEl) return;
 
-        if (!currentUser.loggedIn) {
-            listEl.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">Please log in to see transactions.</td></tr>';
+        if (!currentUser.loggedIn || currentUser.role === 'guest') {
+            listEl.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">Please log in as a Member or Admin to see transactions.</td></tr>';
             return;
         }
 
@@ -963,7 +986,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3 text-right">${purchaseDetail}</td>
                 <td class="p-3 text-right">$${(item.price || 0).toFixed(2)}</td>
                 <td class="p-3 text-right font-semibold">$${(item.dollarValue || 0).toFixed(2)}</td>
-                <td class="p-3 text-center"><button class="delete-btn" data-id="${item.id}"><i class="fas fa-times-circle"></i></button></td>
+                <td class="p-3 text-center"><button class="delete-transaction-btn" data-id="${item.id}"><i class="fas fa-times-circle"></i></button></td>
             `;
             listEl.appendChild(row);
         });
@@ -973,7 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const listEl = document.getElementById('presentationList');
         const submitCard = document.getElementById('submitPresentationCard');
     
-        if (currentUser.role === 'guest') {
+        if (currentUser.role === 'guest' || !currentUser.loggedIn) {
             submitCard.style.display = 'none';
         } else {
             submitCard.style.display = 'block';
@@ -988,7 +1011,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // The role is no longer sent in the query. The backend knows the user's role.
             const response = await fetch(`/api/presentations`);
             const presentations = await response.json();
             listEl.innerHTML = '';
@@ -1012,12 +1034,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 let voteButtons = '';
-                if (p.isVotingOpen && currentUser.role !== 'guest') {
+                const canVote = p.isVotingOpen && currentUser.loggedIn && currentUser.role !== 'guest';
+                if (canVote && !p.hasVoted) {
                     voteButtons = `
                         <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i></button>
                         <button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i></button>
                     `;
+                } else if (canVote && p.hasVoted) {
+                    const forVoted = p.voteDirection === 'for' ? 'voted' : '';
+                    const againstVoted = p.voteDirection === 'against' ? 'voted' : '';
+                    voteButtons = `
+                        <button class="vote-btn ${forVoted}" disabled><i class="fas fa-thumbs-up text-green-500"></i></button>
+                        <button class="vote-btn ${againstVoted}" disabled><i class="fas fa-thumbs-down text-red-500"></i></button>
+                    `;
                 }
+
 
                 const timeRemaining = formatTimeRemaining(p.votingEndsAt);
                 const timeStatusColor = p.isVotingOpen ? 'text-yellow-400' : 'text-gray-400';
@@ -1038,7 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 listEl.appendChild(card);
             });
-            listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));
+            listEl.querySelectorAll('.vote-btn:not([disabled])').forEach(btn => btn.addEventListener('click', handleVote));
         } catch (error) {
             listEl.innerHTML = '<p class="card text-red-400">Could not load presentations.</p>';
         }
@@ -1048,8 +1079,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const sectionsEl = document.getElementById('portfolioSections');
         if (!sectionsEl) return;
 
-        if (!currentUser.loggedIn) {
-            sectionsEl.innerHTML = '<p class="card text-center text-gray-500">Please log in to see the portfolio dashboard.</p>';
+        if (!currentUser.loggedIn || currentUser.role === 'guest') {
+            sectionsEl.innerHTML = '<p class="card text-center text-gray-500">Please log in as a Member or Admin to see the portfolio dashboard.</p>';
             updatePortfolioTotals([]);
             return;
         }
@@ -1203,9 +1234,97 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- ADMIN PANEL ---
+    async function renderAdminPanel() {
+        const userListEl = document.getElementById('userManagementList');
+        if (!userListEl) return;
+        userListEl.innerHTML = '<tr><td colspan="4" class="text-center p-4">Loading users...</td></tr>';
+
+        try {
+            const response = await fetch('/api/users');
+            if (!response.ok) throw new Error('Failed to fetch users.');
+            const users = await response.json();
+
+            userListEl.innerHTML = '';
+            users.forEach(user => {
+                const row = document.createElement('tr');
+                row.className = 'border-b border-gray-800';
+
+                const isCurrentUser = user.id === currentUser.id;
+
+                const roleOptions = ['guest', 'member', 'admin']
+                    .map(role => `<option value="${role}" ${user.role === role ? 'selected' : ''}>${role.charAt(0).toUpperCase() + role.slice(1)}</option>`)
+                    .join('');
+
+                row.innerHTML = `
+                    <td class="p-3">${user.id}</td>
+                    <td class="p-3 font-semibold">${user.username} ${isCurrentUser ? '(You)' : ''}</td>
+                    <td class="p-3">
+                        <select class="form-input role-select" data-user-id="${user.id}" ${isCurrentUser ? 'disabled' : ''}>
+                            ${roleOptions}
+                        </select>
+                    </td>
+                    <td class="p-3 text-center">
+                        <button class="delete-user-btn" data-user-id="${user.id}" data-username="${user.username}" ${isCurrentUser ? 'disabled' : ''}>
+                            <i class="fas fa-trash-alt text-red-500"></i>
+                        </button>
+                    </td>
+                `;
+                userListEl.appendChild(row);
+            });
+        } catch (error) {
+            userListEl.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-400">${error.message}</td></tr>`;
+        }
+    }
+
+    async function updateUserRole(userId, newRole) {
+        try {
+            const response = await fetch(`/api/users/${userId}/role`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: newRole })
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to update role.');
+            }
+            alert('User role updated successfully.');
+            renderAdminPanel();
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+            renderAdminPanel(); // Re-render to revert optimistic UI change
+        }
+    }
+
+    async function confirmDeleteUser(userId) {
+        try {
+            const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to delete user.');
+            }
+            alert('User deleted successfully.');
+            renderAdminPanel();
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        } finally {
+            hideConfirmationModal();
+        }
+    }
+
+
     // --- UI HELPERS & MODAL ---
-    function showConfirmationModal() { document.getElementById('confirmationModal')?.classList.remove('hidden'); }
-    function hideConfirmationModal() { document.getElementById('confirmationModal')?.classList.add('hidden'); }
+    function promptForConfirmation(title, message, onConfirm) {
+        document.getElementById('modalTitle').textContent = title;
+        document.getElementById('modalMessage').textContent = message;
+        actionToConfirm = onConfirm;
+        document.getElementById('confirmationModal')?.classList.remove('hidden');
+    }
+    
+    function hideConfirmationModal() { 
+        document.getElementById('confirmationModal')?.classList.add('hidden');
+        actionToConfirm = null;
+    }
     
     function getTimeRemaining(endtime) {
         const total = Date.parse(endtime) - Date.parse(new Date());

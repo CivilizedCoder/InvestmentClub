@@ -6,7 +6,7 @@ from flask_bcrypt import Bcrypt
 import yfinance as yf
 import pandas as pd
 import os
-from sqlalchemy import inspect, text, func
+from sqlalchemy import inspect, text, func, UniqueConstraint
 from sqlalchemy.exc import ProgrammingError
 import math
 from datetime import datetime, timedelta
@@ -61,14 +61,14 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.String(20), nullable=False, default='member') # Roles: 'member', 'admin'
+    role = db.Column(db.String(20), nullable=False, default='member') # Roles: 'guest', 'member', 'admin'
+    votes = db.relationship('Vote', backref='user', lazy=True, cascade="all, delete-orphan")
 
     def set_password(self, password):
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
 
     def check_password(self, password):
         # The stored hash must be encoded back to bytes for the bcrypt library to read the salt.
-        # This fixes the "Invalid salt" error in some environments.
         return bcrypt.check_password_hash(self.password_hash.encode('utf-8'), password)
 
     def to_dict(self):
@@ -87,7 +87,6 @@ class Holding(db.Model):
     date = db.Column(db.String(20))
     custom_section = db.Column(db.String(100), nullable=True, default='Default')
     transaction_type = db.Column(db.String(10), nullable=False, default='buy')
-
 
     def to_dict(self):
         return {
@@ -109,8 +108,10 @@ class Presentation(db.Model):
     votes_against = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     voting_ends_at = db.Column(db.DateTime, nullable=False)
+    votes = db.relationship('Vote', backref='presentation', lazy=True, cascade="all, delete-orphan")
 
-    def to_dict(self, role='guest'):
+    def to_dict(self):
+        role = current_user.role if current_user.is_authenticated else 'guest'
         is_voting_open = datetime.utcnow() < self.voting_ends_at
         
         presentation_dict = {
@@ -120,8 +121,16 @@ class Presentation(db.Model):
             'ticker': self.ticker,
             'action': self.action,
             'votingEndsAt': self.voting_ends_at.isoformat() + 'Z', # ISO format for JS
-            'isVotingOpen': is_voting_open
+            'isVotingOpen': is_voting_open,
+            'hasVoted': False,
+            'voteDirection': None
         }
+
+        if current_user.is_authenticated:
+            user_vote = Vote.query.filter_by(user_id=current_user.id, presentation_id=self.id).first()
+            if user_vote:
+                presentation_dict['hasVoted'] = True
+                presentation_dict['voteDirection'] = user_vote.vote_type
 
         # Admins see votes anytime. Members only see votes after the period is closed.
         if role == 'admin' or not is_voting_open:
@@ -129,6 +138,13 @@ class Presentation(db.Model):
             presentation_dict['votesAgainst'] = self.votes_against
         
         return presentation_dict
+
+class Vote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    presentation_id = db.Column(db.Integer, db.ForeignKey('presentation.id'), nullable=False)
+    vote_type = db.Column(db.String(10), nullable=False) # 'for' or 'against'
+    __table_args__ = (UniqueConstraint('user_id', 'presentation_id', name='_user_presentation_uc'),)
 
 class PageContent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -139,41 +155,6 @@ class PageContent(db.Model):
 with app.app_context():
     # Create all database tables if they don't exist
     db.create_all()
-
-    # Automatic Admin User Creation/Promotion on startup
-    admin_username = "Timothy" # Set the designated admin username
-    admin_password = os.environ.get('ADMIN_PASSWORD')
-    
-    if admin_username:
-        # Find if a user with the admin username already exists.
-        user = User.query.filter_by(username=admin_username).first()
-        
-        if user:
-            # If the user exists but is not an admin, promote them.
-            if user.role != 'admin':
-                print(f"INFO: User '{admin_username}' found, promoting to admin.")
-                user.role = 'admin'
-                db.session.commit()
-                print(f"SUCCESS: User '{admin_username}' is now an admin.")
-            # If they are already an admin, do nothing.
-            else:
-                 print(f"INFO: Admin user '{admin_username}' already exists with correct role.")
-
-        # If the user does not exist at all, create them.
-        elif admin_password:
-            print(f"INFO: Admin user '{admin_username}' not found. Creating new admin user.")
-            new_admin = User(username=admin_username, role='admin')
-            new_admin.set_password(admin_password)
-            db.session.add(new_admin)
-            db.session.commit()
-            print(f"SUCCESS: Admin user '{admin_username}' created automatically.")
-        
-        # If the user doesn't exist and no password is provided
-        else:
-            print(f"WARNING: Admin user '{admin_username}' not found, and ADMIN_PASSWORD is not set. Cannot create admin user.")
-    else:
-        # This case should not be reached since the username is hardcoded, but kept for safety.
-        print("WARNING: admin_username is not set. Skipping admin user setup.")
 
 # Teardown function to ensure database sessions are closed after each request.
 @app.teardown_appcontext
@@ -270,7 +251,7 @@ def register():
         if User.query.filter_by(username=username).first():
             return jsonify({'success': False, 'error': 'Username is already taken.'}), 400
         
-        new_user = User(username=username, role='member') # New users are members by default
+        new_user = User(username=username, role='guest') # New users are guests by default
         new_user.set_password(password)
         db.session.add(new_user)
         db.session.commit()
@@ -283,6 +264,56 @@ def register():
 def logout():
     logout_user()
     return redirect(url_for('login'))
+
+# --- USER MANAGEMENT API (for Admins) ---
+@app.route('/api/users', methods=['GET'])
+@login_required
+def get_users():
+    if current_user.role != 'admin':
+        return jsonify({"error": "Forbidden"}), 403
+    users = User.query.all()
+    return jsonify([user.to_dict() for user in users])
+
+@app.route('/api/users/<int:user_id>/role', methods=['POST'])
+@login_required
+def update_user_role(user_id):
+    if current_user.role != 'admin':
+        return jsonify({"error": "Forbidden"}), 403
+    
+    user_to_update = User.query.get(user_id)
+    if not user_to_update:
+        return jsonify({"error": "User not found"}), 404
+        
+    data = request.get_json()
+    new_role = data.get('role')
+    if new_role not in ['guest', 'member', 'admin']:
+        return jsonify({"error": "Invalid role specified"}), 400
+
+    # Prevent admin from demoting themselves
+    if user_to_update.id == current_user.id and new_role != 'admin':
+        return jsonify({"error": "Admins cannot demote themselves."}), 400
+
+    user_to_update.role = new_role
+    db.session.commit()
+    return jsonify({"message": "User role updated successfully.", "user": user_to_update.to_dict()})
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@login_required
+def delete_user(user_id):
+    if current_user.role != 'admin':
+        return jsonify({"error": "Forbidden"}), 403
+
+    user_to_delete = User.query.get(user_id)
+    if not user_to_delete:
+        return jsonify({"error": "User not found"}), 404
+
+    # Prevent admin from deleting themselves
+    if user_to_delete.id == current_user.id:
+        return jsonify({"error": "You cannot delete your own account."}), 400
+
+    db.session.delete(user_to_delete)
+    db.session.commit()
+    return jsonify({"message": "User deleted successfully"})
 
 # --- HTML & API ROUTES ---
 @app.route('/')
@@ -564,19 +595,14 @@ def update_holding_section():
 # Presentations
 @app.route('/api/presentations', methods=['GET'])
 def get_presentations():
-    # Determine role securely from the logged-in user
-    role = 'guest'
-    if current_user.is_authenticated:
-        role = current_user.role
-
     try:
-        presentations = Presentation.query.order_by(Presentation.id.desc()).all()
-        return jsonify([p.to_dict(role=role) for p in presentations])
+        presentations = Presentation.query.order_by(Presentation.created_at.desc()).all()
+        return jsonify([p.to_dict() for p in presentations])
     except ProgrammingError:
         db.session.rollback()
         if add_columns_if_missing():
-            presentations = Presentation.query.order_by(Presentation.id.desc()).all()
-            return jsonify([p.to_dict(role=role) for p in presentations])
+            presentations = Presentation.query.order_by(Presentation.created_at.desc()).all()
+            return jsonify([p.to_dict() for p in presentations])
         else:
             return jsonify({"error": "Database schema out of date."}), 500
 
@@ -584,6 +610,8 @@ def get_presentations():
 @app.route('/api/presentations', methods=['POST'])
 @login_required
 def add_presentation():
+    if current_user.role == 'guest':
+        return jsonify({"error": "Guests cannot submit presentations."}), 403
     data = request.get_json()
     if not all(k in data for k in ['title', 'url', 'ticker', 'action']):
         return jsonify({"error": "Missing required fields"}), 400
@@ -599,11 +627,14 @@ def add_presentation():
     )
     db.session.add(new_presentation)
     db.session.commit()
-    return jsonify(new_presentation.to_dict(role='admin')), 201
+    return jsonify(new_presentation.to_dict()), 201
 
 @app.route('/api/presentations/<int:presentation_id>/vote', methods=['POST'])
 @login_required
 def vote_on_presentation(presentation_id):
+    if current_user.role == 'guest':
+        return jsonify({"error": "Guests cannot vote."}), 403
+        
     data = request.get_json()
     vote_type = data.get('voteType')
     
@@ -613,16 +644,27 @@ def vote_on_presentation(presentation_id):
         
     if datetime.utcnow() > presentation.voting_ends_at:
         return jsonify({"error": "Voting for this presentation has closed."}), 403
-        
+    
+    # Check if the user has already voted
+    existing_vote = Vote.query.filter_by(user_id=current_user.id, presentation_id=presentation_id).first()
+    if existing_vote:
+        return jsonify({"error": "You have already voted on this presentation."}), 409 # 409 Conflict
+
+    if vote_type not in ['for', 'against']:
+        return jsonify({"error": "Invalid vote type"}), 400
+
+    # Add the new vote
+    new_vote = Vote(user_id=current_user.id, presentation_id=presentation_id, vote_type=vote_type)
+    db.session.add(new_vote)
+
+    # Update the presentation's vote count
     if vote_type == 'for':
         presentation.votes_for += 1
     elif vote_type == 'against':
         presentation.votes_against += 1
-    else:
-        return jsonify({"error": "Invalid vote type"}), 400
         
     db.session.commit()
-    return jsonify(presentation.to_dict(role='admin'))
+    return jsonify(presentation.to_dict())
 
 # Page Content Management
 @app.route('/api/page/<page_name>', methods=['GET'])
