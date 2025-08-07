@@ -133,34 +133,29 @@ class PageContent(db.Model):
     page_name = db.Column(db.String(50), unique=True, nullable=False)
     content = db.Column(db.Text, nullable=False)
 
-# Create the database tables within the application context
+# --- INITIAL SETUP AND MIGRATIONS ---
 with app.app_context():
+    # Create all database tables if they don't exist
     db.create_all()
+
+    # Automatic Admin User Creation on first startup
+    if db.session.query(User).count() == 0:
+        print("INFO: No users found in the database. Attempting to create initial admin user.")
+        admin_user = os.environ.get('ADMIN_USERNAME')
+        admin_pass = os.environ.get('ADMIN_PASSWORD')
+        if admin_user and admin_pass:
+            new_admin = User(username=admin_user, role='admin')
+            new_admin.set_password(admin_pass)
+            db.session.add(new_admin)
+            db.session.commit()
+            print(f"SUCCESS: Admin user '{admin_user}' created automatically.")
+        else:
+            print("WARNING: ADMIN_USERNAME and/or ADMIN_PASSWORD environment variables not set. No admin user created.")
 
 # Teardown function to ensure database sessions are closed after each request.
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db.session.remove()
-
-# --- CLI COMMANDS ---
-@app.cli.command("create-admin")
-def create_admin():
-    """Creates the initial admin user from environment variables."""
-    admin_user = os.environ.get('ADMIN_USERNAME')
-    admin_pass = os.environ.get('ADMIN_PASSWORD')
-    if not admin_user or not admin_pass:
-        print("Error: ADMIN_USERNAME and ADMIN_PASSWORD environment variables must be set.")
-        return
-
-    if User.query.filter_by(username=admin_user).first():
-        print(f"User '{admin_user}' already exists.")
-        return
-
-    new_admin = User(username=admin_user, role='admin')
-    new_admin.set_password(admin_pass)
-    db.session.add(new_admin)
-    db.session.commit()
-    print(f"Admin user '{admin_user}' created successfully.")
 
 # --- HELPER FUNCTIONS ---
 def add_columns_if_missing():
