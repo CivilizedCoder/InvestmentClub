@@ -1417,7 +1417,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!accountContent) return;
 
         // Fetch the HTML content for the account page
-        const response = await fetch('/account');
+        const response = await fetch('/account-partial');
+        if (!response.ok) {
+            accountContent.innerHTML = `<div class="card text-red-400"><p>Error: Could not load account details.</p></div>`;
+            return;
+        }
         accountContent.innerHTML = await response.text();
 
         // Populate the user data
