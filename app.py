@@ -676,8 +676,13 @@ def get_portfolio_history():
             return jsonify([])
 
         trans_df = pd.DataFrame([t.to_dict() for t in transactions])
-        trans_df['date'] = pd.to_datetime(trans_df['date'])
         
+        # Robustly handle date parsing
+        trans_df['date'] = pd.to_datetime(trans_df['date'], errors='coerce')
+        trans_df.dropna(subset=['date'], inplace=True)
+        if trans_df.empty:
+            return jsonify([])
+
         tickers = trans_df['symbol'].unique().tolist()
         start_date = trans_df['date'].min().normalize()
         end_date = datetime.utcnow().normalize()
@@ -888,4 +893,4 @@ def update_page_content(page_name):
 
 if __name__ == '__main__':
     # Use a different port if needed, e.g., app.run(debug=True, port=5001)
-    app.run(debug=True)
+    app.run(debug=Tr
