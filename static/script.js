@@ -2,9 +2,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBAL STATE ---
     let stockChart;
-    let portfolioChart;
     let currentStockData = null;
-    let portfolioHistoryData = [];
     let transactions = []; // This now holds all transactions, not just current holdings
     let recentSearches = [];
     const MAX_RECENT_SEARCHES = 5;
@@ -1145,7 +1143,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         initializeDragAndDrop();
         applySectionCollapseStates();
-        renderPortfolioChart(); 
     }
 
     async function fetchQuotesForHoldings(holdings) {
@@ -1475,95 +1472,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- CHARTING ---
-    async function renderPortfolioChart() {
-        if (portfolioHistoryData.length === 0) {
-            await fetchPortfolioHistory();
-        }
-        document.querySelectorAll('.timeframe-btn[data-chart="portfolio"]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const range = btn.dataset.range;
-                document.querySelectorAll('.timeframe-btn[data-chart="portfolio"]').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                updateChartAndStats(portfolioChart, portfolioHistoryData, range, 'portfolioReturnStats', 'ReturnIndex');
-            });
-        });
-        // Set default view
-        const defaultButton = document.querySelector('.timeframe-btn[data-chart="portfolio"].active') || document.querySelector('.timeframe-btn[data-chart="portfolio"][data-range="MAX"]');
-        if (defaultButton) {
-            updateChartAndStats(portfolioChart, portfolioHistoryData, defaultButton.dataset.range, 'portfolioReturnStats', 'ReturnIndex');
-        }
-    }
-
-    async function fetchPortfolioHistory() {
-        try {
-            const response = await fetch('/api/portfolio/history');
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Failed to fetch portfolio history');
-            }
-            portfolioHistoryData = await response.json();
-            setupPortfolioChart();
-        } catch (error) {
-            console.error("Error fetching portfolio history:", error);
-            const chartContainer = document.getElementById('portfolioChart')?.parentElement;
-            if(chartContainer) chartContainer.innerHTML = `<p class="text-red-400 text-center">${error.message}</p>`;
-        }
-    }
-
-    function setupPortfolioChart() {
-        const ctx = document.getElementById('portfolioChart')?.getContext('2d');
-        if (!ctx) return;
-        if (portfolioChart) portfolioChart.destroy();
-        
-        portfolioChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Portfolio Performance',
-                    data: [],
-                    borderColor: '#22D3EE',
-                    backgroundColor: 'rgba(34, 211, 238, 0.1)',
-                    fill: true,
-                    tension: 0.1,
-                    pointRadius: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                scales: {
-                    x: { type: 'time', time: { unit: 'day' }, grid: { display: false } },
-                    y: {
-                        grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                        ticks: {
-                            callback: function(value, index, values) {
-                                return (value - 100).toFixed(0) + '%';
-                            }
-                        }
-                    }
-                },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: '#1F2937', titleColor: '#E5E7EB', bodyColor: '#E5E7EB',
-                        borderColor: '#374151', borderWidth: 1, padding: 10, displayColors: false,
-                        callbacks: {
-                            title: (ctx) => new Date(ctx[0].parsed.x).toLocaleDateString(),
-                            label: (ctx) => {
-                                const value = ctx.parsed.y;
-                                const percentChange = value - 100;
-                                const sign = percentChange >= 0 ? '+' : '';
-                                return `Return: ${sign}${percentChange.toFixed(2)}%`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
     function setupIndividualStockChart() {
         const ctx = document.getElementById('stockChart')?.getContext('2d');
         if (!ctx) return;
