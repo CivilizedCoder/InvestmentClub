@@ -936,32 +936,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryList = document.getElementById('portfolioSummaryList');
         const summaryTitle = document.querySelector('#portfolioSummary h3');
         if (!summaryList || !summaryTitle) return;
-
+    
         summaryTitle.textContent = (currentUser.loggedIn && currentUser.role !== 'guest') ? 'Portfolio Snapshot' : 'Club Watchlist';
-
-        const watchlistItems = transactions.filter(t => !t.isReal);
+    
         const currentPositions = aggregatePortfolio(transactions);
-
+        const positionSymbols = new Set(currentPositions.map(p => p.symbol));
+        const watchlistItems = transactions.filter(t => !t.isReal && !positionSymbols.has(t.symbol));
+    
         if (watchlistItems.length === 0 && currentPositions.length === 0) {
             summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No items to display.</p>';
             return;
         }
-
+    
         try {
-            const tickers = [...new Set(transactions.map(t => t.symbol))];
+            const tickers = [...new Set([...currentPositions.map(p => p.symbol), ...watchlistItems.map(t => t.symbol)])];
             const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
             if (!response.ok) throw new Error('Failed to fetch quotes');
             
             const quotes = await response.json();
             summaryList.innerHTML = '';
-
+    
             const allItems = [...currentPositions, ...watchlistItems];
-
+    
             allItems.forEach(item => {
                 const quote = quotes[item.symbol];
                 const isWatchlist = !item.hasOwnProperty('totalCost');
                 const price = isWatchlist ? item.price : item.totalCost / item.quantity;
-
+    
                 const currentPrice = quote?.currentPrice ?? price;
                 const priceChange = currentPrice - (quote?.previousClose ?? price);
                 const priceChangePercent = (quote?.previousClose ?? 0) > 0 ? (priceChange / quote.previousClose) * 100 : 0;
@@ -1114,32 +1115,64 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderPortfolioDashboard(newSectionName = null) {
         saveSectionCollapseStates();
         const sectionsEl = document.getElementById('portfolioSections');
-        if (!sectionsEl) return;
-
+        const kpiCardEl = document.getElementById('portfolioKpiCard');
+        if (!sectionsEl || !kpiCardEl) return;
+    
         if (!currentUser.loggedIn || currentUser.role === 'guest') {
             sectionsEl.innerHTML = '<p class="card text-center text-gray-500">Please log in as a Member or Admin to see the portfolio dashboard.</p>';
+            kpiCardEl.innerHTML = '';
             return;
         }
-
+    
         const currentPositions = aggregatePortfolio(transactions);
+        
         if (currentPositions.length === 0 && !newSectionName) {
             sectionsEl.innerHTML = '<p class="card text-center text-gray-500">No real holdings to analyze.</p>';
-        } else {
-            const quotes = await fetchQuotesForHoldings(currentPositions);
-            const sections = groupHoldingsBySection(currentPositions, quotes);
-            const totalPortfolioValue = Object.values(sections).reduce((sum, sec) => sum + sec.currentValue, 0);
-
-            if (newSectionName && !sections[newSectionName]) {
-                sections[newSectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
-            }
-
-            sectionsEl.innerHTML = '';
-            Object.keys(sections).sort().forEach(sectionName => {
-                const section = sections[sectionName];
-                const sectionEl = createPortfolioSection(sectionName, section, totalPortfolioValue);
-                sectionsEl.appendChild(sectionEl);
-            });
+            kpiCardEl.innerHTML = '';
+            return;
         }
+        
+        const quotes = await fetchQuotesForHoldings(currentPositions);
+        const sections = groupHoldingsBySection(currentPositions, quotes);
+        
+        // --- Calculate and Render KPIs ---
+        const totalPortfolioValue = Object.values(sections).reduce((sum, sec) => sum + sec.currentValue, 0);
+        const totalInvestedCapital = Object.values(sections).reduce((sum, sec) => sum + sec.totalCost, 0);
+        const totalGainLoss = totalPortfolioValue - totalInvestedCapital;
+        const totalGainLossPercent = totalInvestedCapital > 0 ? (totalGainLoss / totalInvestedCapital) * 100 : 0;
+        const gainLossColor = totalGainLoss >= 0 ? 'text-green-400' : 'text-red-400';
+
+        kpiCardEl.innerHTML = `
+            <div class="kpi-grid">
+                <div>
+                    <p class="kpi-label">Total Portfolio Value</p>
+                    <p class="kpi-value">$${totalPortfolioValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                </div>
+                <div>
+                    <p class="kpi-label">Invested Capital</p>
+                    <p class="kpi-value">$${totalInvestedCapital.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                </div>
+                <div>
+                    <p class="kpi-label">Total Gain / Loss</p>
+                    <p class="kpi-value ${gainLossColor}">
+                        ${totalGainLoss >= 0 ? '+' : '-'}$${Math.abs(totalGainLoss).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        <span class="text-base font-medium">(${totalGainLossPercent.toFixed(2)}%)</span>
+                    </p>
+                </div>
+            </div>
+        `;
+        
+        // --- Render Sections ---
+        if (newSectionName && !sections[newSectionName]) {
+            sections[newSectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
+        }
+
+        sectionsEl.innerHTML = '';
+        Object.keys(sections).sort().forEach(sectionName => {
+            const section = sections[sectionName];
+            const sectionEl = createPortfolioSection(sectionName, section, totalPortfolioValue);
+            sectionsEl.appendChild(sectionEl);
+        });
         
         initializeDragAndDrop();
         applySectionCollapseStates();
