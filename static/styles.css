@@ -207,7 +207,7 @@ body {
     border-left-color: #22D3EE; /* cyan-400 */
 }
 
-.delete-transaction-btn {
+.delete-on-card-btn {
     position: absolute;
     top: 0.5rem;
     right: 0.5rem;
@@ -221,9 +221,24 @@ body {
     font-size: 1.1rem;
     line-height: 1;
 }
-.delete-transaction-btn:hover {
+.delete-on-card-btn:hover {
     color: #F87171;
 }
+
+.delete-in-table-btn {
+    background: none;
+    border: none;
+    color: #6B7280; /* gray-500 */
+    cursor: pointer;
+    transition: color 0.2s ease;
+    padding: 0.25rem;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+.delete-in-table-btn:hover {
+    color: #F87171; /* red-400 */
+}
+
 
 /* --- COLLAPSIBLE SECTIONS --- */
 .collapsible-header {

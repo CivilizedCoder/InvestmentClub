@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         document.querySelector('main').addEventListener('click', (e) => {
-            const deleteButton = e.target.closest('.delete-transaction-btn');
+            const deleteButton = e.target.closest('.delete-on-card-btn, .delete-in-table-btn');
             if (deleteButton) {
                 e.stopPropagation();
                 const transactionId = parseInt(deleteButton.dataset.id, 10);
@@ -972,7 +972,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
                 card.dataset.symbol = item.symbol;
                 card.innerHTML = `
-                    ${isWatchlist && currentUser.role === 'admin' ? `<button class="delete-transaction-btn" data-id="${item.id}" title="Delete"><i class="fas fa-times-circle"></i></button>` : ''}
+                    ${isWatchlist && currentUser.role === 'admin' ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Delete"><i class="fas fa-times-circle"></i></button>` : ''}
                     <div class="summary-card-content">
                         <div class="flex justify-between items-center">
                             <p class="font-bold text-lg">${item.symbol}</p>
@@ -1023,7 +1023,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="p-3 text-right">${purchaseDetail}</td>
                 <td class="p-3 text-right">$${(item.price || 0).toFixed(2)}</td>
                 <td class="p-3 text-right font-semibold">$${(item.dollarValue || 0).toFixed(2)}</td>
-                <td class="p-3 text-center"><button class="delete-transaction-btn" data-id="${item.id}"><i class="fas fa-times-circle"></i></button></td>
+                <td class="p-3 text-center"><button class="delete-in-table-btn" data-id="${item.id}"><i class="fas fa-times-circle"></i></button></td>
             `;
             listEl.appendChild(row);
         });
