@@ -61,7 +61,7 @@
             <h2 class="text-3xl font-bold mb-4">Club Dashboard</h2>
             <div id="portfolioSummary">
                 <h3 class="text-2xl font-bold mb-4">Club Watchlist</h3>
-                <div id="portfolioSummaryList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+                <div id="portfolioSummaryList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
             </div>
         </div>
 
@@ -141,24 +141,34 @@
 
         <div id="portfolioContent" class="tab-content">
             <h2 class="text-3xl font-bold mb-4">Portfolio Dashboard</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div class="card text-center">
-                    <h4 class="text-lg font-semibold text-gray-400">Total Value</h4>
-                    <p id="portfolioTotalValue" class="text-3xl font-bold text-cyan-400 mt-2">$0.00</p>
+            
+            <!-- Portfolio Performance Chart -->
+            <div class="card mb-8">
+                <div class="flex justify-between items-center mb-4">
+                     <h3 class="text-2xl font-bold">Portfolio Performance</h3>
+                     <div id="portfolioReturnStats" class="text-right">
+                        <!-- Populated by JS -->
+                     </div>
                 </div>
-                <div class="card text-center">
-                    <h4 class="text-lg font-semibold text-gray-400">Total Cost</h4>
-                    <p id="portfolioTotalCost" class="text-3xl font-bold mt-2">$0.00</p>
+                <div class="flex space-x-2 mb-4">
+                    <button class="timeframe-btn" data-chart="portfolio" data-range="1D">1D</button>
+                    <button class="timeframe-btn" data-chart="portfolio" data-range="1W">1W</button>
+                    <button class="timeframe-btn" data-chart="portfolio" data-range="1M">1M</button>
+                    <button class="timeframe-btn" data-chart="portfolio" data-range="1Y">1Y</button>
+                    <button class="timeframe-btn" data-chart="portfolio" data-range="5Y">5Y</button>
+                    <button class="timeframe-btn active" data-chart="portfolio" data-range="MAX">All</button>
                 </div>
-                <div class="card text-center">
-                    <h4 class="text-lg font-semibold text-gray-400">Net Earnings</h4>
-                    <p id="portfolioTotalEarnings" class="text-3xl font-bold mt-2">$0.00</p>
-                </div>
+                <div class="chart-container" style="height: 400px;"><canvas id="portfolioChart"></canvas></div>
             </div>
-            <div class="flex justify-end mb-4">
-                <button id="addSectionBtn" class="button-success">Add New Section</button>
+
+            <!-- Portfolio Breakdown -->
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-bold">Portfolio Breakdown</h3>
+                <button id="addSectionBtn" class="button-success hidden">Add New Section</button>
             </div>
-            <div id="portfolioSections" class="space-y-6"></div>
+            <div id="portfolioSections" class="portfolio-sections-grid">
+                <!-- Sections populated by JS -->
+            </div>
         </div>
 
         <div id="accountContent" class="tab-content">

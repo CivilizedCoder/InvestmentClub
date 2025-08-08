@@ -56,32 +56,6 @@ body {
     color: white;
 }
 
-/* --- USER ROLE SELECTOR (DEPRECATED, but keeping for reference if needed) --- */
-.role-btn {
-    width: 100%;
-    text-align: left;
-    padding: 0.5rem 1rem;
-    border-radius: 0.375rem;
-    font-weight: 600;
-    color: #9CA3AF;
-    background-color: transparent;
-    border: 1px solid #4B5563;
-    cursor: pointer;
-    transition: all 0.2s ease-in-out;
-}
-
-.role-btn:hover {
-    background-color: #374151;
-    color: white;
-}
-
-.role-btn.active {
-    background-color: #059669; /* green-600 */
-    color: white;
-    border-color: #059669;
-}
-
-
 /* --- TABBED CONTENT --- */
 .tab-content {
     display: none;
@@ -233,31 +207,23 @@ body {
     border-left-color: #22D3EE; /* cyan-400 */
 }
 
-.delete-btn {
+.delete-transaction-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
     background: none;
     border: none;
-    color: #6B7280; /* gray-500 */
+    color: #6B7280;
     cursor: pointer;
     transition: color 0.2s ease;
     padding: 0.25rem;
     font-size: 1.1rem;
     line-height: 1;
 }
-.delete-btn:hover {
-    color: #F87171; /* red-400 */
+.delete-transaction-btn:hover {
+    color: #F87171;
 }
-
-.summary-card .delete-btn {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 10;
-}
-
-.summary-card-content {
-    padding-right: 2rem; /* Make space for the delete button */
-}
-
 
 /* --- COLLAPSIBLE SECTIONS --- */
 .collapsible-header {
@@ -318,7 +284,7 @@ body {
     font-weight: 600;
 }
 
-/* --- CHART TIMEFRAME BUTTONS --- */
+/* --- CHARTING & PERFORMANCE STATS --- */
 .timeframe-btn {
     background-color: #374151;
     color: #D1D5DB;
@@ -339,7 +305,31 @@ body {
     border-color: #06B6D4;
 }
 
-/* --- DRAG AND DROP --- */
+.return-value {
+    font-size: 1.25rem; /* 20px */
+    font-weight: 700; /* bold */
+}
+
+.return-value.positive {
+    color: #4ADE80; /* green-400 */
+}
+
+.return-value.negative {
+    color: #F87171; /* red-400 */
+}
+
+.return-period {
+    font-size: 0.875rem; /* 14px */
+    color: #9CA3AF; /* gray-400 */
+}
+
+/* --- PORTFOLIO BREAKDOWN & DRAG-AND-DROP --- */
+.portfolio-sections-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 1.5rem;
+}
+
 .portfolio-section .card {
     cursor: grab;
 }
@@ -378,17 +368,15 @@ body {
     border-radius: 0.5rem;
 }
 
-/* Unified style for the content grid in both view and edit modes */
 .content-grid {
     position: relative;
-    height: auto; /* Allow height to be determined by content */
-    min-height: 80vh; /* Ensure it has a large minimum height */
-    overflow: visible; /* Prevent internal scrollbars */
-    padding: 0; /* Remove padding to avoid clipping content */
-    border: 1px solid transparent; /* Invisible border by default */
+    height: auto;
+    min-height: 80vh;
+    overflow: visible;
+    padding: 0;
+    border: 1px solid transparent;
 }
 
-/* In edit mode, just add the dashed border for visual feedback */
 .content-grid.is-editing {
     border: 1px dashed #06B6D4;
 }
@@ -397,28 +385,25 @@ body {
     opacity: 1;
 }
 
-/* Styling for cards with images */
+.content-card, .content-text-box {
+    resize: both;
+    overflow: hidden;
+    position: absolute;
+}
+
 .content-card {
     background-color: #374151;
     border-radius: 0.5rem;
     display: flex;
     flex-direction: column;
-    resize: both;
-    overflow: hidden;
-    position: absolute;
 }
 
-/* Styling for text-only boxes */
 .content-text-box {
     background-color: transparent;
     border-radius: 0.5rem;
-    resize: both;
-    overflow: hidden;
-    position: absolute;
-    border: 1px solid transparent; /* Invisible border by default */
+    border: 1px solid transparent;
 }
 
-/* Header for draggable items - now an overlay */
 .card-header {
     position: absolute;
     top: 0;
@@ -433,16 +418,14 @@ body {
     padding: 0 4px;
     box-sizing: border-box;
     z-index: 20;
-    opacity: 0; /* Hidden by default */
+    opacity: 0;
     transition: opacity 0.2s ease-in-out;
 }
 
-/* Show header on hover ONLY in edit mode */
 .content-grid.is-editing .content-card:hover .card-header,
 .content-grid.is-editing .content-text-box:hover .card-header {
     opacity: 1;
 }
-
 
 .card-delete-btn, .card-text-size-btn {
     background: none;
@@ -490,20 +473,13 @@ body {
     overflow-y: auto;
 }
 
-
-/* General class for a hidden element */
-.hidden {
-    display: none !important;
-}
-
-/* New rule for cards without text */
 .content-card.no-text .content-card-image-wrapper {
     height: 100%;
 }
 
 /* --- PRESENTATION VOTE BUTTONS --- */
 .vote-btn.voted {
-    background-color: #06B6D4; /* cyan-500 */
+    background-color: #06B6D4;
     border: 1px solid #0891B2;
     transform: scale(1.1);
 }
@@ -513,11 +489,16 @@ body {
 }
 
 /* --- ADMIN PANEL --- */
-.delete-user-btn:disabled {
+.delete-user-btn:disabled, .set-password-btn:disabled {
     cursor: not-allowed;
     opacity: 0.4;
 }
 .role-select:disabled {
     cursor: not-allowed;
     opacity: 0.6;
+}
+
+/* General class for a hidden element */
+.hidden {
+    display: none !important;
 }

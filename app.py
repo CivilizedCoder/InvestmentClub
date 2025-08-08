@@ -664,6 +664,63 @@ def update_holding_section():
     db.session.commit()
     return jsonify({"message": f"Section for {symbol} updated to {new_section}"})
 
+@app.route('/api/portfolio/history')
+@login_required
+def get_portfolio_history():
+    if current_user.role == 'guest':
+        return jsonify({"error": "Guests cannot view portfolio history."}), 403
+
+    try:
+        transactions = Holding.query.filter_by(is_real=True).order_by(Holding.date.asc()).all()
+        if not transactions:
+            return jsonify([])
+
+        # Create a DataFrame from transactions
+        trans_df = pd.DataFrame([t.to_dict() for t in transactions])
+        trans_df['date'] = pd.to_datetime(trans_df['date'])
+        trans_df['quantity'] = trans_df.apply(lambda row: row['quantity'] if row['transactionType'] == 'buy' else -row['quantity'], axis=1)
+
+        # Get tickers and date range
+        tickers = trans_df['symbol'].unique().tolist()
+        start_date = trans_df['date'].min()
+        end_date = datetime.utcnow().date()
+
+        if pd.isna(start_date): # Handle case with no valid transaction dates
+            return jsonify([])
+            
+        # Fetch historical stock prices
+        hist_prices = yf.download(tickers, start=start_date - timedelta(days=1), end=end_date + timedelta(days=1))['Close']
+        
+        # If only one ticker, yf.download returns a Series, convert to DataFrame
+        if isinstance(hist_prices, pd.Series):
+            hist_prices = hist_prices.to_frame(name=tickers[0])
+            
+        # Forward-fill missing price data to handle weekends/holidays
+        hist_prices.ffill(inplace=True)
+
+        # Pivot transactions to have dates as index, symbols as columns, and quantity as values
+        pivoted_trans = trans_df.pivot_table(index='date', columns='symbol', values='quantity', aggfunc='sum').fillna(0)
+        
+        # Create a full date range and calculate cumulative holdings
+        full_date_range = pd.date_range(start=start_date, end=end_date)
+        daily_holdings = pivoted_trans.reindex(full_date_range).fillna(0).cumsum()
+
+        # Calculate daily portfolio value
+        # Align indices and multiply holdings by prices
+        portfolio_values = (daily_holdings * hist_prices).sum(axis=1)
+
+        # Format for JSON response
+        portfolio_history = portfolio_values.reset_index()
+        portfolio_history.columns = ['Date', 'Value']
+        portfolio_history = portfolio_history[portfolio_history['Value'] > 0.01] # Remove days with effectively zero value
+        portfolio_history['Date'] = portfolio_history['Date'].dt.strftime('%Y-%m-%d')
+        
+        return jsonify(portfolio_history.to_dict('records'))
+
+    except Exception as e:
+        print(f"Error calculating portfolio history: {e}")
+        return jsonify({"error": "Failed to calculate portfolio history."}), 500
+
 # Presentations
 @app.route('/api/presentations', methods=['GET'])
 @login_required

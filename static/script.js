@@ -2,11 +2,14 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBAL STATE ---
     let stockChart;
+    let portfolioChart;
     let currentStockData = null;
+    let portfolioHistoryData = [];
     let transactions = []; // This now holds all transactions, not just current holdings
     let recentSearches = [];
     const MAX_RECENT_SEARCHES = 5;
     let actionToConfirm = null; // A function to execute when modal is confirmed
+    let sectionCollapseStates = {}; // To store open/closed state of portfolio sections
 
     // The currentUser object is the single source of truth for user state.
     let currentUser = { loggedIn: false, username: 'Guest', role: 'guest' };
@@ -82,13 +85,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- AUTO-REFRESHER ---
     function autoRefreshPrices() {
-        // Check which tab is currently active
         const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
 
-        // If the user is on a page with live prices, refresh it
         if (activeTab === 'home') {
             renderPortfolioSummary();
         } else if (activeTab === 'portfolio') {
+            // This re-renders the dashboard but preserves the open/closed state of sections
             renderPortfolioDashboard();
         }
     }
@@ -126,14 +128,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // Listener for content card and text box delete buttons
             const cardDeleteBtn = e.target.closest('.card-delete-btn');
             if (cardDeleteBtn) {
                 cardDeleteBtn.closest('.content-card, .content-text-box').remove();
                 return;
             }
             
-            // Listener for text size button
             const textSizeBtn = e.target.closest('.card-text-size-btn');
             if (textSizeBtn) {
                 const element = textSizeBtn.closest('.content-card, .content-text-box');
@@ -177,7 +177,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Event delegation for admin panel
         document.getElementById('adminContent')?.addEventListener('click', e => {
             const roleSelect = e.target.closest('.role-select');
             if (roleSelect) {
@@ -208,7 +207,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         
-        // --- INJECT AND SET UP 'ADD TEXT' BUTTONS ---
         const addCardButtons = document.querySelectorAll('#addAboutCardBtn, #addInternshipsCardBtn');
         addCardButtons.forEach(btn => {
             const pageName = btn.id.includes('About') ? 'about' : 'internships';
@@ -220,8 +218,6 @@ document.addEventListener('DOMContentLoaded', () => {
             textBtn.addEventListener('click', () => addTextBox(pageName));
         });
 
-
-        // Edit/Save Listeners for Static Pages
         document.getElementById('editAboutBtn').addEventListener('click', () => toggleContentEditable('about'));
         document.getElementById('editInternshipsBtn').addEventListener('click', () => toggleContentEditable('internships'));
         document.getElementById('addAboutCardBtn').addEventListener('click', () => addContentCard('about'));
@@ -244,11 +240,10 @@ document.addEventListener('DOMContentLoaded', () => {
             switch (role) {
                 case 'member': visibleTabs = memberTabs; break;
                 case 'admin': visibleTabs = adminTabs; break;
-                default: visibleTabs = [...guestTabs, 'account']; // Logged-in guests can see their account page
+                default: visibleTabs = [...guestTabs, 'account'];
             }
         }
         
-        // Show/hide nav links
         document.querySelectorAll('.nav-link').forEach(link => {
             if (visibleTabs.includes(link.dataset.tab)) {
                 link.classList.remove('hidden');
@@ -257,13 +252,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // If current tab is now hidden, switch to home
         const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
         if (!visibleTabs.includes(activeTab)) {
             activateTab('home');
         }
 
-        // Show/hide admin buttons
         const isAdmin = role === 'admin';
         document.getElementById('editAboutBtn').classList.toggle('hidden', !isAdmin);
         document.getElementById('editInternshipsBtn').classList.toggle('hidden', !isAdmin);
@@ -273,7 +266,6 @@ document.addEventListener('DOMContentLoaded', () => {
             addSectionBtn.style.display = isAdmin ? 'block' : 'none';
         }
     }
-
 
     // --- NAVIGATION & TAB CONTROL ---
     async function activateTab(tab) {
@@ -351,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/api/watchlist');
             if (!response.ok) throw new Error('Failed to fetch watchlist');
-            transactions = await response.json(); // Store watchlist in the same global array
+            transactions = await response.json();
         } catch (error) {
             console.error("Fetch watchlist error:", error);
             transactions = [];
@@ -381,13 +373,11 @@ document.addEventListener('DOMContentLoaded', () => {
             newTransaction.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
             newTransaction.price = parseFloat(document.getElementById('purchasePrice').value);
     
-            // Simplified validation
             if (isNaN(newTransaction.quantity) || isNaN(newTransaction.price) || !newTransaction.date) {
                 alert("Please fill in all transaction details: Quantity, Price per Share, and Date.");
                 return;
             }
             
-            // Always calculate dollar value from quantity and price
             newTransaction.dollarValue = newTransaction.quantity * newTransaction.price;
     
         } else { // Watchlist item
@@ -434,7 +424,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function updateHoldingSection(symbol, newSection) {
-        // Optimistically update the local data
         transactions.forEach(tx => {
             if (tx.symbol === symbol) {
                 tx.customSection = newSection;
@@ -448,29 +437,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // --- PORTFOLIO AGGREGATION ---
     function aggregatePortfolio(allTransactions) {
-        const portfolio = {}; // Keyed by symbol
-
-        // Create a copy and sort transactions by date to process them in order
+        const portfolio = {};
         const sortedTransactions = [...allTransactions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
         for (const tx of sortedTransactions) {
-            if (!tx.isReal) continue; // Skip watchlist items
+            if (!tx.isReal) continue;
 
-            // Initialize position if it's the first time we see this symbol
             if (!portfolio[tx.symbol]) {
                 if (tx.transactionType === 'sell') {
                     console.error(`Found a 'sell' transaction for ${tx.symbol} before any 'buy'. Skipping.`);
                     continue;
                 }
                 portfolio[tx.symbol] = {
-                    symbol: tx.symbol,
-                    longName: tx.longName,
-                    sector: tx.sector,
-                    customSection: tx.customSection,
-                    quantity: 0,
-                    totalCost: 0,
+                    symbol: tx.symbol, longName: tx.longName, sector: tx.sector,
+                    customSection: tx.customSection, quantity: 0, totalCost: 0,
                 };
             }
 
@@ -479,8 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tx.transactionType === 'buy') {
                 position.quantity += tx.quantity;
                 position.totalCost += tx.dollarValue;
-            } else { // 'sell'
-                // Prevent division by zero if selling shares that were never bought (should be caught by backend)
+            } else {
                 if (position.quantity > 0) {
                     const avgCostPerShare = position.totalCost / position.quantity;
                     const costOfGoodsSold = avgCostPerShare * tx.quantity;
@@ -489,14 +469,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     position.totalCost -= costOfGoodsSold;
                 }
             }
-            // Update the custom section to the latest one for this symbol
             position.customSection = tx.customSection;
         }
 
-        // Convert map to array and filter out zero-quantity positions
         return Object.values(portfolio).filter(p => p.quantity > 0.00001);
     }
 
+    // --- SECTION STATE MANAGEMENT (to prevent collapsing on refresh) ---
+    function saveSectionCollapseStates() {
+        const sections = document.querySelectorAll('.portfolio-section-header');
+        sections.forEach(header => {
+            const sectionName = header.closest('.portfolio-section').dataset.sectionName;
+            if (sectionName) {
+                sectionCollapseStates[sectionName] = header.classList.contains('open');
+            }
+        });
+    }
+    
+    function applySectionCollapseStates() {
+        Object.keys(sectionCollapseStates).forEach(sectionName => {
+            if (sectionCollapseStates[sectionName]) {
+                const header = document.querySelector(`.portfolio-section[data-section-name="${sectionName}"] .portfolio-section-header`);
+                const content = header?.nextElementSibling;
+                if (header && content) {
+                    header.classList.add('open');
+                    content.classList.add('open');
+                }
+            }
+        });
+    }
 
     // --- CONTENT MANAGEMENT ---
     async function fetchPageContent(pageName) {
@@ -508,23 +509,16 @@ document.addEventListener('DOMContentLoaded', () => {
     
             const images = contentDiv.querySelectorAll('img');
             if (images.length === 0) {
-                // If no images, calculate height immediately
                 calculateAndSetGridHeight(contentDiv);
             } else {
-                // If there are images, wait for them to load
                 const promises = Array.from(images).map(img => {
                     return new Promise((resolve) => {
-                        // Resolve on load or error to ensure we don't wait forever
                         img.onload = resolve;
                         img.onerror = resolve;
-                        // Handle cached images that might not fire 'load'
-                        if (img.complete) {
-                            resolve();
-                        }
+                        if (img.complete) resolve();
                     });
                 });
                 await Promise.all(promises);
-                // Now that images are loaded, calculate the correct height
                 calculateAndSetGridHeight(contentDiv);
             }
         } catch (error) {
@@ -542,14 +536,12 @@ document.addEventListener('DOMContentLoaded', () => {
         contentDiv.classList.toggle('is-editing');
 
         if (isEditable) {
-            // --- SAVE CONTENT ---
             editBtn.textContent = 'Edit';
             editBtn.classList.remove('button-success');
             editBtn.classList.add('button-secondary');
             addCardBtn.classList.add('hidden');
             addTextBtn.classList.add('hidden');
             
-            // Detach drag handlers and remove contenteditable attributes
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 const header = el.querySelector('.card-header');
                 if (header) header.removeEventListener('mousedown', onStartDragCard);
@@ -557,7 +549,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (textEl) textEl.contentEditable = false;
             });
 
-            // Serialize the content
             let finalHtml = '';
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 finalHtml += el.outerHTML;
@@ -570,15 +561,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
         } else {
-            // --- ENABLE EDITING ---
             editBtn.textContent = 'Save';
             editBtn.classList.remove('button-secondary');
             editBtn.classList.add('button-success');
             addCardBtn.classList.remove('hidden');
             addTextBtn.classList.remove('hidden');
-            calculateAndSetGridHeight(contentDiv); // Adjust height when entering edit mode
+            calculateAndSetGridHeight(contentDiv);
 
-            // Attach drag handlers and set contenteditable
             contentDiv.querySelectorAll('.content-card, .content-text-box').forEach(el => {
                 if (!el.querySelector('.card-header')) {
                     const header = document.createElement('div');
@@ -663,12 +652,11 @@ document.addEventListener('DOMContentLoaded', () => {
         calculateAndSetGridHeight(contentDiv);
     }
     
-    // --- DYNAMIC CONTENT GRID & DRAGGING LOGIC ---
     function calculateAndSetGridHeight(gridElement) {
         if (!gridElement) return;
     
         let maxHeight = 0;
-        const padding = 50; // Extra space at the bottom
+        const padding = 50;
         const children = gridElement.querySelectorAll('.content-card, .content-text-box');
     
         children.forEach(child => {
@@ -678,7 +666,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     
-        // Set a minimum height even if empty, to make it a droppable area
         const minGridHeight = 500; 
         gridElement.style.minHeight = `${Math.max(minGridHeight, maxHeight + padding)}px`;
     }
@@ -766,8 +753,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="mt-4 text-gray-400">${info.longBusinessSummary || 'No summary available.'}</p>
                 </div>
                 <div class="card mb-6">
+                    <div class="flex justify-between items-center mb-4">
+                         <h3 class="text-2xl font-bold">Performance</h3>
+                         <div id="stockReturnStats" class="text-right"></div>
+                    </div>
                     <div class="flex space-x-2 mb-4">
-                        ${['Today', '1W', '1M', '3M', '6M', '1Y', '5Y', 'MAX'].map(t => `<button class="timeframe-btn" data-range="${t}">${t}</button>`).join('')}
+                        ${['1D', '1W', '1M', '1Y', '5Y', 'MAX'].map(t => `<button class="timeframe-btn" data-chart="stock" data-range="${t}">${t}</button>`).join('')}
                     </div>
                     <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
                 </div>
@@ -793,28 +784,24 @@ document.addEventListener('DOMContentLoaded', () => {
         searchContent.innerHTML = contentHtml;
     
         if (data) {
-            setupIndividualStockChart(data.historical);
+            setupIndividualStockChart();
             
-            // Add event listeners to the new timeframe buttons
-            searchContent.querySelectorAll('.timeframe-btn').forEach(btn => {
+            document.querySelectorAll('.timeframe-btn[data-chart="stock"]').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const range = btn.dataset.range;
-                    searchContent.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.timeframe-btn[data-chart="stock"]').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
-
-                    // If range is 'Today' or '1W', fetch new high-frequency data
-                    if (range === 'Today' || range === '1W') {
-                        fetchAndupdateChart(data.info.symbol, range);
+                    
+                    if (range === '1D') {
+                        fetchAndupdateStockChart(data.info.symbol, '1d', '5m');
                     } else {
-                        // Otherwise, use the existing daily data for longer ranges
-                        updateChartByRange(data.historical, range);
+                        updateChartAndStats(stockChart, data.historical, range, 'stockReturnStats', 'Close');
                     }
                 });
             });
 
-            // Set a default active button and load its chart view
-            searchContent.querySelector('.timeframe-btn[data-range="1Y"]')?.classList.add('active');
-            updateChartByRange(data.historical, '1Y');
+            document.querySelector('.timeframe-btn[data-chart="stock"][data-range="1Y"]')?.classList.add('active');
+            updateChartAndStats(stockChart, data.historical, '1Y', 'stockReturnStats', 'Close');
 
             if (currentUser.loggedIn) {
                 const isRealCheckbox = document.getElementById('isRealCheckbox');
@@ -825,8 +812,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     realPurchaseInputs.classList.toggle('hidden', !isRealCheckbox.checked);
                     addToPortfolioBtn.textContent = isRealCheckbox.checked ? 'Add Transaction' : 'Add to Watchlist';
                 });
-    
-                // The event listener for purchaseType radio buttons is no longer needed.
                 
                 addToPortfolioBtn.addEventListener('click', addTransaction);
             }
@@ -862,15 +847,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             <span class="ml-2">Sell</span>
                         </label>
                     </div>
-                    
-                    <!-- Inputs for quantity and price are now always shown for real transactions -->
                     <div id="quantityInputs">
                         <div class="grid grid-cols-2 gap-4">
                             <input type="number" step="any" id="purchaseQuantity" placeholder="Quantity (e.g., 10.5)" class="form-input">
                             <input type="number" step="any" id="purchasePrice" placeholder="Price per Share" class="form-input">
                         </div>
                     </div>
-    
                     <div>
                         <label for="purchaseDate" class="block text-sm font-medium text-gray-400 mb-1">Transaction Date</label>
                         <input type="date" id="purchaseDate" value="${today}" class="form-input">
@@ -942,12 +924,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryTitle = document.querySelector('#portfolioSummary h3');
         if (!summaryList || !summaryTitle) return;
 
-        // Adjust title based on user role
-        if (currentUser.loggedIn && currentUser.role !== 'guest') {
-            summaryTitle.textContent = 'Portfolio Snapshot';
-        } else {
-            summaryTitle.textContent = 'Club Watchlist';
-        }
+        summaryTitle.textContent = (currentUser.loggedIn && currentUser.role !== 'guest') ? 'Portfolio Snapshot' : 'Club Watchlist';
 
         const watchlistItems = transactions.filter(t => !t.isReal);
         const currentPositions = aggregatePortfolio(transactions);
@@ -963,7 +940,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('Failed to fetch quotes');
             
             const quotes = await response.json();
-            summaryList.innerHTML = ''; // Clear previous content
+            summaryList.innerHTML = '';
 
             const allItems = [...currentPositions, ...watchlistItems];
 
@@ -1122,40 +1099,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function renderPortfolioDashboard(newSectionName = null) {
+        saveSectionCollapseStates();
         const sectionsEl = document.getElementById('portfolioSections');
         if (!sectionsEl) return;
 
         if (!currentUser.loggedIn || currentUser.role === 'guest') {
             sectionsEl.innerHTML = '<p class="card text-center text-gray-500">Please log in as a Member or Admin to see the portfolio dashboard.</p>';
-            updatePortfolioTotals([]);
             return;
         }
 
         const currentPositions = aggregatePortfolio(transactions);
-
         if (currentPositions.length === 0 && !newSectionName) {
             sectionsEl.innerHTML = '<p class="card text-center text-gray-500">No real holdings to analyze.</p>';
-            updatePortfolioTotals([]);
-            return;
+        } else {
+            const quotes = await fetchQuotesForHoldings(currentPositions);
+            const sections = groupHoldingsBySection(currentPositions, quotes);
+            const totalPortfolioValue = Object.values(sections).reduce((sum, sec) => sum + sec.currentValue, 0);
+
+            if (newSectionName && !sections[newSectionName]) {
+                sections[newSectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
+            }
+
+            sectionsEl.innerHTML = '';
+            Object.keys(sections).sort().forEach(sectionName => {
+                const section = sections[sectionName];
+                const sectionEl = createPortfolioSection(sectionName, section, totalPortfolioValue);
+                sectionsEl.appendChild(sectionEl);
+            });
         }
-
-        const quotes = await fetchQuotesForHoldings(currentPositions);
-        const sections = groupHoldingsBySection(currentPositions, quotes);
-        const totalPortfolioValue = Object.values(sections).reduce((sum, sec) => sum + sec.currentValue, 0);
-
-        if (newSectionName && !sections[newSectionName]) {
-            sections[newSectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
-        }
-
-        sectionsEl.innerHTML = '';
-        Object.keys(sections).sort().forEach(sectionName => {
-            const section = sections[sectionName];
-            const sectionEl = createPortfolioSection(sectionName, section, totalPortfolioValue);
-            sectionsEl.appendChild(sectionEl);
-        });
-
-        updatePortfolioTotals(Object.values(sections));
+        
         initializeDragAndDrop();
+        applySectionCollapseStates();
+        renderPortfolioChart(); 
     }
 
     async function fetchQuotesForHoldings(holdings) {
@@ -1188,7 +1163,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createPortfolioSection(name, section, totalPortfolioValue) {
         const sectionEl = document.createElement('div');
-        sectionEl.className = 'portfolio-section card mb-6';
+        sectionEl.className = 'portfolio-section card';
         sectionEl.dataset.sectionName = name;
         const earnings = section.currentValue - section.totalCost;
         const earningsPercent = section.totalCost > 0 ? (earnings / section.totalCost) * 100 : 0;
@@ -1210,7 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             <div class="holding-list space-y-2">
-                ${section.holdings.map(h => createHoldingCard(h, section.currentValue)).join('') || '<p class="text-gray-500">Drag holdings here.</p>'}
+                ${section.holdings.map(h => createHoldingCard(h, section.currentValue)).join('') || '<p class="text-gray-500 p-4 text-center">Drag holdings here.</p>'}
             </div>
         `;
         return sectionEl;
@@ -1241,26 +1216,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
-    }
-
-    function updatePortfolioTotals(sections) {
-        let totalValue = 0, totalCost = 0;
-        sections.forEach(s => {
-            totalValue += s.currentValue;
-            totalCost += s.totalCost;
-        });
-        const totalEarnings = totalValue - totalCost;
-        const totalEarningsPercent = totalCost > 0 ? (totalEarnings / totalCost) * 100 : 0;
-        const earningsColor = totalEarnings >= 0 ? 'text-green-400' : 'text-red-400';
-
-        document.getElementById('portfolioTotalValue').textContent = `$${totalValue.toFixed(2)}`;
-        document.getElementById('portfolioTotalCost').textContent = `$${totalCost.toFixed(2)}`;
-        const earningsEl = document.getElementById('portfolioTotalEarnings');
-        earningsEl.innerHTML = `
-            ${totalEarnings >= 0 ? '+' : '-'}$${Math.abs(totalEarnings).toFixed(2)}
-            <span class="text-lg font-semibold">(${totalEarningsPercent.toFixed(2)}%)</span>
-        `;
-        earningsEl.className = `text-3xl font-bold mt-2 ${earningsColor}`;
     }
 
     function initializeDragAndDrop() {
@@ -1295,9 +1250,7 @@ document.addEventListener('DOMContentLoaded', () => {
             users.forEach(user => {
                 const row = document.createElement('tr');
                 row.className = 'border-b border-gray-800';
-
                 const isCurrentUser = user.id === currentUser.id;
-
                 const roleOptions = ['guest', 'member', 'admin']
                     .map(role => `<option value="${role}" ${user.role === role ? 'selected' : ''}>${role.charAt(0).toUpperCase() + role.slice(1)}</option>`)
                     .join('');
@@ -1341,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderAdminPanel();
         } catch (error) {
             alert(`Error: ${error.message}`);
-            renderAdminPanel(); // Re-render to revert optimistic UI change
+            renderAdminPanel();
         }
     }
 
@@ -1383,7 +1336,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const accountContent = document.getElementById('accountContent');
         if (!accountContent) return;
 
-        // Fetch the HTML content for the account page
         const response = await fetch('/account-partial');
         if (!response.ok) {
             accountContent.innerHTML = `<div class="card text-red-400"><p>Error: Could not load account details.</p></div>`;
@@ -1391,11 +1343,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         accountContent.innerHTML = await response.text();
 
-        // Populate the user data
         document.getElementById('accountUsername').textContent = currentUser.username;
         document.getElementById('accountRole').textContent = currentUser.role;
 
-        // Add event listeners for the forms
         document.getElementById('changeUsernameForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const newUsername = document.getElementById('newUsername').value;
@@ -1409,7 +1359,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await res.json();
             if (result.success) {
                 alert(result.message);
-                await fetchUserStatus(); // Refresh user data globally
+                await fetchUserStatus();
                 document.getElementById('accountUsername').textContent = currentUser.username;
                 e.target.reset();
             } else {
@@ -1452,34 +1402,30 @@ document.addEventListener('DOMContentLoaded', () => {
         actionToConfirm = null;
     }
     
-    function getTimeRemaining(endtime) {
-        const total = Date.parse(endtime) - Date.parse(new Date());
-        const seconds = Math.floor((total / 1000) % 60);
-        const minutes = Math.floor((total / 1000 / 60) % 60);
-        const hours = Math.floor((total / (1000 * 60 * 60)) % 24);
-        const days = Math.floor(total / (1000 * 60 * 60 * 24));
-        
-        return { total, days, hours, minutes, seconds };
-    }
-    
     function formatTimeRemaining(endtime) {
         const t = getTimeRemaining(endtime);
-        if (t.total <= 0) {
-            return "Voting has ended.";
-        }
+        if (t.total <= 0) return "Voting has ended.";
         
-        let parts = [];
+        const parts = [];
         if (t.days > 0) parts.push(`${t.days}d`);
         if (t.hours > 0) parts.push(`${t.hours}h`);
         if (t.minutes > 0) parts.push(`${t.minutes}m`);
         
-        if (parts.length === 0 && t.seconds > 0) {
-            return "Time left: <1m";
-        }
-        
+        if (parts.length === 0 && t.seconds > 0) return "Time left: <1m";
         return `Time left: ${parts.join(' ')}`;
     }
 
+    function getTimeRemaining(endtime) {
+        const total = Date.parse(endtime) - Date.parse(new Date());
+        return {
+            total,
+            days: Math.floor(total / (1000 * 60 * 60 * 24)),
+            hours: Math.floor((total / (1000 * 60 * 60)) % 24),
+            minutes: Math.floor((total / 1000 / 60) % 60),
+            seconds: Math.floor((total / 1000) % 60)
+        };
+    }
+    
     // --- PRESENTATION HANDLERS ---
     async function handlePresentationSubmit(e) {
         e.preventDefault();
@@ -1513,135 +1459,125 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- CHARTING ---
-    async function fetchAndupdateChart(ticker, range) {
-        if (!stockChart) return;
-
-        let period, interval, unit;
-        if (range === 'Today') {
-            period = '1d';
-            interval = '1m';
-            unit = 'minute';
-        } else { // '1W'
-            period = '7d';
-            interval = '1h';
-            unit = 'hour';
+    async function renderPortfolioChart() {
+        if (portfolioHistoryData.length === 0) {
+            await fetchPortfolioHistory();
         }
+        document.querySelectorAll('.timeframe-btn[data-chart="portfolio"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const range = btn.dataset.range;
+                document.querySelectorAll('.timeframe-btn[data-chart="portfolio"]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                updateChartAndStats(portfolioChart, portfolioHistoryData, range, 'portfolioReturnStats', 'Value');
+            });
+        });
+        updateChartAndStats(portfolioChart, portfolioHistoryData, 'MAX', 'portfolioReturnStats', 'Value');
+    }
 
+    async function fetchPortfolioHistory() {
         try {
-            const response = await fetch(`/api/stock/${ticker}/history?period=${period}&interval=${interval}`);
+            const response = await fetch('/api/portfolio/history');
             if (!response.ok) {
                 const err = await response.json();
-                throw new Error(err.error || 'Failed to fetch chart data');
+                throw new Error(err.error || 'Failed to fetch portfolio history');
             }
-            const data = await response.json();
-            
-            if (data.length === 0) {
-                console.warn(`No historical data returned for ${ticker} with range ${range}`);
-                stockChart.data.labels = [];
-                stockChart.data.datasets[0].data = [];
-                stockChart.update();
-                return;
-            }
-
-            stockChart.data.labels = data.map(d => d.Timestamp);
-            stockChart.data.datasets[0].data = data.map(d => d.Close);
-            stockChart.options.scales.x.time.unit = unit;
-            stockChart.update();
-
+            portfolioHistoryData = await response.json();
+            setupPortfolioChart();
         } catch (error) {
-            console.error(`Failed to fetch chart data for range ${range}:`, error);
+            console.error("Error fetching portfolio history:", error);
+            const chartContainer = document.getElementById('portfolioChart')?.parentElement;
+            if(chartContainer) chartContainer.innerHTML = `<p class="text-red-400 text-center">${error.message}</p>`;
         }
     }
 
-    function setupIndividualStockChart(historicalData) {
+    function setupPortfolioChart() {
+        const ctx = document.getElementById('portfolioChart')?.getContext('2d');
+        if (!ctx) return;
+        if (portfolioChart) portfolioChart.destroy();
+        
+        portfolioChart = new Chart(ctx, {
+            type: 'line', data: { labels: [], datasets: [{ label: 'Portfolio Value', data: [], borderColor: '#22D3EE', backgroundColor: 'rgba(34, 211, 238, 0.1)', fill: true, tension: 0.1, pointRadius: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { type: 'time', time: { unit: 'day' }, grid: { display: false } }, y: { grid: { color: 'rgba(255, 255, 255, 0.1)' } } }, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1F2937', titleColor: '#E5E7EB', bodyColor: '#E5E7EB', borderColor: '#374151', borderWidth: 1, padding: 10, displayColors: false, callbacks: { title: (ctx) => new Date(ctx[0].parsed.x).toLocaleDateString(), label: (ctx) => `Value: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(ctx.parsed.y)}` } } } }
+        });
+    }
+
+    function setupIndividualStockChart() {
         const ctx = document.getElementById('stockChart')?.getContext('2d');
         if (!ctx) return;
         if (stockChart) stockChart.destroy();
         
         stockChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Price',
-                    data: [],
-                    borderColor: '#22D3EE',
-                    backgroundColor: 'rgba(34, 211, 238, 0.1)',
-                    fill: true,
-                    tension: 0.1,
-                    pointRadius: 0,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
-                scales: { 
-                    x: { type: 'time', time: { unit: 'day' }, grid: { display: false } },
-                    y: { grid: { color: 'rgba(255, 255, 255, 0.1)' } }
-                },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: '#1F2937',
-                        titleColor: '#E5E7EB',
-                        bodyColor: '#E5E7EB',
-                        borderColor: '#374151',
-                        borderWidth: 1,
-                        padding: 10,
-                        displayColors: false,
-                        callbacks: {
-                            title: function(context) {
-                                const date = new Date(context[0].parsed.x);
-                                const timeOptions = { year: 'numeric', month: 'long', day: 'numeric' };
-                                if (stockChart.options.scales.x.time.unit !== 'day') {
-                                    timeOptions.hour = '2-digit';
-                                    timeOptions.minute = '2-digit';
-                                }
-                                return date.toLocaleDateString('en-US', timeOptions);
-                            },
-                            label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (label) {
-                                    label += ': ';
-                                }
-                                if (context.parsed.y !== null) {
-                                    label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed.y);
-                                }
-                                return label;
-                            }
-                        }
-                    }
-                }
-            }
+            type: 'line', data: { labels: [], datasets: [{ label: 'Price', data: [], borderColor: '#22D3EE', backgroundColor: 'rgba(34, 211, 238, 0.1)', fill: true, tension: 0.1, pointRadius: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { type: 'time', time: { unit: 'day' }, grid: { display: false } }, y: { grid: { color: 'rgba(255, 255, 255, 0.1)' } } }, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1F2937', titleColor: '#E5E7EB', bodyColor: '#E5E7EB', borderColor: '#374151', borderWidth: 1, padding: 10, displayColors: false, callbacks: { title: (ctx) => new Date(ctx[0].parsed.x).toLocaleDateString(), label: (ctx) => `Price: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(ctx.parsed.y)}` } } } }
         });
     }
 
-    function updateChartByRange(historicalData, range) {
-        if (!stockChart || !historicalData || historicalData.length === 0) return;
+    async function fetchAndupdateStockChart(ticker, period, interval) {
+        try {
+            const response = await fetch(`/api/stock/${ticker}/history?period=${period}&interval=${interval}`);
+            if (!response.ok) throw new Error('Failed to fetch chart data');
+            const data = await response.json();
+            updateChartAndStats(stockChart, data, '1D', 'stockReturnStats', 'Close');
+        } catch (error) {
+            console.error(`Failed to fetch chart data for range ${period}:`, error);
+        }
+    }
 
+    function updateChartAndStats(chart, fullData, range, statsContainerId, dataKey) {
+        if (!chart || !fullData || fullData.length === 0) {
+            const statsContainer = document.getElementById(statsContainerId);
+            if(statsContainer) statsContainer.innerHTML = '';
+            if (chart) {
+                chart.data.labels = [];
+                chart.data.datasets[0].data = [];
+                chart.update();
+            }
+            return;
+        };
+    
         const now = new Date();
         let startDate = new Date();
-        
+        const dateKey = fullData[0].Date ? 'Date' : 'Timestamp';
+    
         switch (range) {
+            case '1D': startDate.setDate(now.getDate() - 1); break;
             case '1W': startDate.setDate(now.getDate() - 7); break;
             case '1M': startDate.setMonth(now.getMonth() - 1); break;
-            case '3M': startDate.setMonth(now.getMonth() - 3); break;
-            case '6M': startDate.setMonth(now.getMonth() - 6); break;
             case '1Y': startDate.setFullYear(now.getFullYear() - 1); break;
             case '5Y': startDate.setFullYear(now.getFullYear() - 5); break;
-            case 'MAX': startDate = new Date(historicalData[0].Date); break;
+            case 'MAX': startDate = new Date(fullData[0][dateKey]); break;
         }
-
-        const filteredData = historicalData.filter(d => new Date(d.Date) >= startDate);
         
-        stockChart.data.labels = filteredData.map(d => d.Date);
-        stockChart.data.datasets[0].data = filteredData.map(d => d.Close);
-        stockChart.options.scales.x.time.unit = 'day'; // Reset unit to day for longer timeframes
-        stockChart.update();
+        const filteredData = fullData.filter(d => new Date(d[dateKey]) >= startDate);
+    
+        if (filteredData.length < 2) {
+            const statsContainer = document.getElementById(statsContainerId);
+            if(statsContainer) statsContainer.innerHTML = '<p class="return-period">Not enough data for period</p>';
+            chart.data.labels = filteredData.map(d => d[dateKey]);
+            chart.data.datasets[0].data = filteredData.map(d => d[dataKey]);
+            chart.update();
+            return;
+        }
+    
+        const startValue = filteredData[0][dataKey];
+        const endValue = filteredData[filteredData.length - 1][dataKey];
+        const change = endValue - startValue;
+        const percentChange = startValue > 0 ? (change / startValue) * 100 : 0;
+        const changeColor = change >= 0 ? 'positive' : 'negative';
+        const sign = change >= 0 ? '+' : '';
+    
+        const statsContainer = document.getElementById(statsContainerId);
+        if(statsContainer) {
+            statsContainer.innerHTML = `
+                <p class="return-value ${changeColor}">${sign}${change.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} (${sign}${percentChange.toFixed(2)}%)</p>
+                <p class="return-period">For selected period</p>
+            `;
+        }
+    
+        chart.data.labels = filteredData.map(d => d[dateKey]);
+        chart.data.datasets[0].data = filteredData.map(d => d[dataKey]);
+        chart.options.scales.x.time.unit = (range === '1D') ? 'hour' : 'day';
+        chart.update();
     }
 
     // --- START THE APP ---
