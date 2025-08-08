@@ -675,50 +675,72 @@ def get_portfolio_history():
         if not transactions:
             return jsonify([])
 
-        # Create a DataFrame from transactions
         trans_df = pd.DataFrame([t.to_dict() for t in transactions])
         trans_df['date'] = pd.to_datetime(trans_df['date'])
-        trans_df['quantity'] = trans_df.apply(lambda row: row['quantity'] if row['transactionType'] == 'buy' else -row['quantity'], axis=1)
-
-        # Get tickers and date range
+        
         tickers = trans_df['symbol'].unique().tolist()
-        start_date = trans_df['date'].min()
-        end_date = datetime.utcnow().date()
+        start_date = trans_df['date'].min().normalize()
+        end_date = datetime.utcnow().normalize()
 
-        if pd.isna(start_date): # Handle case with no valid transaction dates
+        if pd.isna(start_date):
             return jsonify([])
             
-        # Fetch historical stock prices
-        hist_prices = yf.download(tickers, start=start_date - timedelta(days=1), end=end_date + timedelta(days=1))['Close']
-        
-        # If only one ticker, yf.download returns a Series, convert to DataFrame
+        hist_prices = yf.download(tickers, start=start_date, end=end_date, progress=False)['Close']
         if isinstance(hist_prices, pd.Series):
             hist_prices = hist_prices.to_frame(name=tickers[0])
-            
-        # Forward-fill missing price data to handle weekends/holidays
-        hist_prices.ffill(inplace=True)
+        hist_prices = hist_prices.ffill().bfill() # Forward and back fill to handle missing data
 
-        # Pivot transactions to have dates as index, symbols as columns, and quantity as values
-        pivoted_trans = trans_df.pivot_table(index='date', columns='symbol', values='quantity', aggfunc='sum').fillna(0)
-        
-        # Create a full date range and calculate cumulative holdings
         full_date_range = pd.date_range(start=start_date, end=end_date)
-        daily_holdings = pivoted_trans.reindex(full_date_range).fillna(0).cumsum()
+        transactions_by_date = trans_df.groupby(trans_df['date'])
 
-        # Calculate daily portfolio value
-        # Align indices and multiply holdings by prices
-        portfolio_values = (daily_holdings * hist_prices).sum(axis=1)
+        holdings = {}
+        daily_data = []
 
-        # Format for JSON response
-        portfolio_history = portfolio_values.reset_index()
-        portfolio_history.columns = ['Date', 'Value']
-        portfolio_history = portfolio_history[portfolio_history['Value'] > 0.01] # Remove days with effectively zero value
-        portfolio_history['Date'] = portfolio_history['Date'].dt.strftime('%Y-%m-%d')
+        for current_date in full_date_range:
+            if current_date in transactions_by_date.groups:
+                day_trans = transactions_by_date.get_group(current_date)
+                for _, tx in day_trans.iterrows():
+                    symbol = tx['symbol']
+                    if symbol not in holdings:
+                        holdings[symbol] = {'quantity': 0, 'totalCost': 0}
+                    
+                    position = holdings[symbol]
+                    if tx['transactionType'] == 'buy':
+                        position['quantity'] += tx['quantity']
+                        position['totalCost'] += tx['dollarValue']
+                    else: # sell
+                        if position['quantity'] > 0:
+                            avg_cost_per_share = position['totalCost'] / position['quantity']
+                            cost_of_goods_sold = avg_cost_per_share * tx['quantity']
+                            position['quantity'] -= tx['quantity']
+                            position['totalCost'] -= cost_of_goods_sold
+            
+            current_day_value = 0
+            current_day_cost = 0
+            
+            price_date = current_date if current_date in hist_prices.index else None
+            if price_date:
+                for symbol, pos_data in holdings.items():
+                    if pos_data['quantity'] > 0.00001:
+                        if symbol in hist_prices.columns:
+                            price = hist_prices.loc[price_date, symbol]
+                            if pd.notna(price):
+                                current_day_value += pos_data['quantity'] * price
+                        current_day_cost += pos_data['totalCost']
+
+            if current_day_value > 0 or current_day_cost > 0:
+                 daily_data.append({
+                    'Date': current_date.strftime('%Y-%m-%d'),
+                    'Value': current_day_value,
+                    'Cost': current_day_cost
+                })
         
-        return jsonify(portfolio_history.to_dict('records'))
+        return jsonify(clean_nan(daily_data))
 
     except Exception as e:
         print(f"Error calculating portfolio history: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": "Failed to calculate portfolio history."}), 500
 
 # Presentations
