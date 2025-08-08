@@ -81,9 +81,9 @@ class Holding(db.Model):
     sector = db.Column(db.String(50), nullable=True)
     is_real = db.Column(db.Boolean, nullable=False)
     purchase_type = db.Column(db.String(20))
-    quantity = db.Column(db.Float)
-    price = db.Column(db.Float) # Price per share at purchase/sale
-    dollar_value = db.Column(db.Float) # Total value of transaction
+    quantity = db.Column(db.Float) # Price per share at purchase/sale
+    price = db.Column(db.Float) # Total value of transaction
+    dollar_value = db.Column(db.Float)
     date = db.Column(db.String(20))
     custom_section = db.Column(db.String(100), nullable=True, default='Default')
     transaction_type = db.Column(db.String(10), nullable=False, default='buy')
@@ -684,26 +684,28 @@ def get_portfolio_history():
 
         if pd.isna(start_date):
             return jsonify([])
+        
+        # Robustly download historical prices
+        hist_data = yf.download(tickers, start=start_date, end=end_date, progress=False)
+        if hist_data.empty:
+            return jsonify({"error": "Could not download any historical price data."}), 500
             
-        hist_prices = yf.download(tickers, start=start_date, end=end_date, progress=False)['Close']
+        hist_prices = hist_data['Close']
         if isinstance(hist_prices, pd.Series):
             hist_prices = hist_prices.to_frame(name=tickers[0])
         hist_prices = hist_prices.ffill().bfill()
 
-        full_date_range = pd.date_range(start=start_date, end=end_date)
+        full_date_range = pd.date_range(start=start_date, end=end_date, freq='D')
         
-        # Group transactions by date for efficient processing
         trans_df['date_only'] = trans_df['date'].dt.normalize()
         transactions_by_date = trans_df.groupby('date_only')
 
-        holdings = {} # symbol -> {'quantity': float}
+        holdings = {}
         daily_values = []
         
-        # This loop calculates the raw portfolio value and cash flows for each day
         for current_date in full_date_range:
             net_cash_flow = 0
             
-            # Process transactions for the current day
             if current_date in transactions_by_date.groups:
                 day_trans = transactions_by_date.get_group(current_date)
                 for _, tx in day_trans.iterrows():
@@ -711,21 +713,25 @@ def get_portfolio_history():
                     if symbol not in holdings:
                         holdings[symbol] = {'quantity': 0}
                     
+                    # Defensively handle potentially missing data
+                    quantity = tx['quantity'] if pd.notna(tx['quantity']) else 0
+                    dollar_value = tx['dollarValue'] if pd.notna(tx['dollarValue']) else 0
+
                     if tx['transactionType'] == 'buy':
-                        holdings[symbol]['quantity'] += tx['quantity']
-                        net_cash_flow += tx['dollarValue']
+                        holdings[symbol]['quantity'] += quantity
+                        net_cash_flow += dollar_value
                     else: # sell
-                        holdings[symbol]['quantity'] -= tx['quantity']
-                        net_cash_flow -= tx['dollarValue']
+                        holdings[symbol]['quantity'] -= quantity
+                        net_cash_flow -= dollar_value
             
-            # Calculate total portfolio value at the end of the day
             current_day_value = 0
-            price_date = current_date if current_date in hist_prices.index else None
-            if price_date:
+            # Ensure the date from our range exists in the downloaded prices index
+            if current_date in hist_prices.index:
                 for symbol, pos_data in holdings.items():
-                    if pos_data['quantity'] > 0.00001:
-                        if symbol in hist_prices.columns and pd.notna(hist_prices.loc[price_date, symbol]):
-                            current_day_value += pos_data['quantity'] * hist_prices.loc[price_date, symbol]
+                    if pos_data['quantity'] > 1e-6 and symbol in hist_prices.columns:
+                        price = hist_prices.loc[current_date, symbol]
+                        if pd.notna(price):
+                            current_day_value += pos_data['quantity'] * price
             
             daily_values.append({
                 'Date': current_date,
@@ -733,29 +739,34 @@ def get_portfolio_history():
                 'CashFlow': net_cash_flow
             })
 
-        # This loop calculates the performance index, isolating returns from cash flows
         performance_data = []
-        return_index = 100.0 # Start index at 100
+        return_index = 100.0
 
-        for i, day in enumerate(daily_values):
-            if i == 0:
-                performance_data.append({
-                    'Date': day['Date'].strftime('%Y-%m-%d'),
-                    'ReturnIndex': return_index
-                })
-                continue
+        if not daily_values:
+            return jsonify([])
 
+        # Initialize with the first day
+        performance_data.append({
+            'Date': daily_values[0]['Date'].strftime('%Y-%m-%d'),
+            'ReturnIndex': return_index
+        })
+
+        for i in range(1, len(daily_values)):
             v_yesterday = daily_values[i-1]['Value']
-            v_today = day['Value']
-            cash_flow_today = day['CashFlow']
+            v_today = daily_values[i]['Value']
+            cash_flow_today = daily_values[i]['CashFlow']
 
-            if v_yesterday > 0.01:
-                # The core Time-Weighted Return calculation for a single day
+            # If portfolio value was zero, the return is 0 unless there's a new cashflow
+            if v_yesterday < 0.01:
+                # If value was zero and new money came in, the index doesn't change on that day
+                # The performance is measured from the next day forward
+                pass
+            else:
                 daily_return = (v_today - v_yesterday - cash_flow_today) / v_yesterday
                 return_index *= (1 + daily_return)
 
             performance_data.append({
-                'Date': day['Date'].strftime('%Y-%m-%d'),
+                'Date': daily_values[i]['Date'].strftime('%Y-%m-%d'),
                 'ReturnIndex': return_index
             })
 
