@@ -595,17 +595,21 @@ def add_transaction():
         long_name = data['longName']
 
     def create_transaction_instance():
+        # The frontend now always provides quantity and price for real transactions.
+        # The 'purchase_type' field is no longer needed for logic.
         instance = Holding(
-            symbol=data['symbol'], long_name=long_name, sector=sector,
-            is_real=data['isReal'], purchase_type=data.get('purchaseType'),
-            quantity=data.get('quantity'), price=data.get('price'),
-            dollar_value=data.get('dollarValue'), date=data.get('date'),
+            symbol=data['symbol'],
+            long_name=long_name,
+            sector=sector,
+            is_real=data['isReal'],
+            purchase_type='quantity', # Hardcode to 'quantity'
+            quantity=data.get('quantity'),
+            price=data.get('price'),
+            dollar_value=data.get('dollarValue'),
+            date=data.get('date'),
             custom_section=data.get('customSection', sector or 'Default'),
             transaction_type=data.get('transactionType', 'buy')
         )
-        # For buys by value, calculate quantity. Sells should always have quantity.
-        if instance.transaction_type == 'buy' and instance.purchase_type == 'value' and instance.price and instance.price > 0:
-            instance.quantity = instance.dollar_value / instance.price
         return instance
 
     new_transaction = create_transaction_instance()

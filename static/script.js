@@ -362,65 +362,53 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentStockData) return;
         const isReal = document.getElementById('isRealCheckbox').checked;
         const transactionType = document.querySelector('input[name="transactionType"]:checked').value;
-        
+    
         const newTransaction = {
             symbol: currentStockData.info.symbol,
             longName: currentStockData.info.longName,
             isReal: isReal,
-            price: currentStockData.market_data.currentPrice,
             sector: currentStockData.info.sector || 'Other',
             transactionType: transactionType
         };
-
+    
         if (isReal) {
-            // Frontend check for better UX, but the backend now enforces this rule.
             if (currentUser.role !== 'admin') {
                 alert("Only admins can add real transactions.");
                 return;
             }
-            const purchaseType = document.querySelector('input[name="purchaseType"]:checked').value;
-            newTransaction.purchaseType = purchaseType;
+            
             newTransaction.date = document.getElementById('purchaseDate').value;
-
-            if (purchaseType === 'quantity') {
-                newTransaction.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
-                newTransaction.price = parseFloat(document.getElementById('purchasePrice').value);
-                if (isNaN(newTransaction.quantity) || isNaN(newTransaction.price) || !newTransaction.date) {
-                    alert("Please fill in all transaction details."); return;
-                }
-                newTransaction.dollarValue = newTransaction.quantity * newTransaction.price;
-            } else { // 'value'
-                newTransaction.dollarValue = parseFloat(document.getElementById('purchaseValue').value);
-                const purchasePrice = parseFloat(document.getElementById('purchasePriceByValue').value);
-
-                if (isNaN(newTransaction.dollarValue) || isNaN(purchasePrice) || !newTransaction.date) {
-                    alert("Please fill in all transaction details: Dollar Value, Price per Share, and Date.");
-                    return;
-                }
-                newTransaction.price = purchasePrice;
-                if (purchasePrice > 0) {
-                    newTransaction.quantity = newTransaction.dollarValue / purchasePrice;
-                } else {
-                    newTransaction.quantity = 0;
-                }
+            newTransaction.quantity = parseFloat(document.getElementById('purchaseQuantity').value);
+            newTransaction.price = parseFloat(document.getElementById('purchasePrice').value);
+    
+            // Simplified validation
+            if (isNaN(newTransaction.quantity) || isNaN(newTransaction.price) || !newTransaction.date) {
+                alert("Please fill in all transaction details: Quantity, Price per Share, and Date.");
+                return;
             }
+            
+            // Always calculate dollar value from quantity and price
+            newTransaction.dollarValue = newTransaction.quantity * newTransaction.price;
+    
         } else { // Watchlist item
             newTransaction.quantity = 0;
             newTransaction.dollarValue = 0;
             newTransaction.price = currentStockData.market_data.currentPrice;
             newTransaction.date = new Date().toISOString().split('T')[0];
         }
-
-        const response = await fetch('/api/transaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newTransaction) });
-        
+    
+        const response = await fetch('/api/transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newTransaction)
+        });
+    
         if (response.ok) {
             const addedTransaction = await response.json();
             transactions.push(addedTransaction);
             alert(`${newTransaction.symbol} transaction has been added.`);
-            // Re-render the current tab to show the new data
             const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
             if (activeTab) activateTab(activeTab);
-
         } else {
             const err = await response.json();
             alert(`Failed to add transaction: ${err.error}`);
@@ -832,21 +820,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const isRealCheckbox = document.getElementById('isRealCheckbox');
                 const realPurchaseInputs = document.getElementById('realPurchaseInputs');
                 const addToPortfolioBtn = document.getElementById('addToPortfolioBtn');
-                const valueInputs = document.getElementById('valueInputs');
-                const quantityInputs = document.getElementById('quantityInputs');
-
+    
                 isRealCheckbox.addEventListener('change', () => {
                     realPurchaseInputs.classList.toggle('hidden', !isRealCheckbox.checked);
                     addToPortfolioBtn.textContent = isRealCheckbox.checked ? 'Add Transaction' : 'Add to Watchlist';
                 });
-
-                document.querySelectorAll('input[name="purchaseType"]').forEach(radio => {
-                    radio.addEventListener('change', () => {
-                        const isQuantity = radio.value === 'quantity';
-                        quantityInputs.classList.toggle('hidden', !isQuantity);
-                        valueInputs.classList.toggle('hidden', isQuantity);
-                    });
-                });
+    
+                // The event listener for purchaseType radio buttons is no longer needed.
+                
                 addToPortfolioBtn.addEventListener('click', addTransaction);
             }
         }
@@ -881,29 +862,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             <span class="ml-2">Sell</span>
                         </label>
                     </div>
-                    <div class="flex items-center space-x-6">
-                        <label class="block text-sm font-medium text-gray-400">Entry Method</label>
-                        <label class="flex items-center text-sm cursor-pointer">
-                            <input type="radio" name="purchaseType" value="value" class="form-radio" checked>
-                            <span class="ml-2">By Dollar Value</span>
-                        </label>
-                        <label class="flex items-center text-sm cursor-pointer">
-                            <input type="radio" name="purchaseType" value="quantity" class="form-radio">
-                            <span class="ml-2">By Quantity</span>
-                        </label>
-                    </div>
-                    <div id="valueInputs">
-                         <div class="grid grid-cols-2 gap-4">
-                            <input type="number" step="any" id="purchaseValue" placeholder="Total Dollar Value" class="form-input">
-                            <input type="number" step="any" id="purchasePriceByValue" placeholder="Price per Share" class="form-input">
-                        </div>
-                    </div>
-                    <div id="quantityInputs" class="hidden">
+                    
+                    <!-- Inputs for quantity and price are now always shown for real transactions -->
+                    <div id="quantityInputs">
                         <div class="grid grid-cols-2 gap-4">
                             <input type="number" step="any" id="purchaseQuantity" placeholder="Quantity (e.g., 10.5)" class="form-input">
                             <input type="number" step="any" id="purchasePrice" placeholder="Price per Share" class="form-input">
                         </div>
                     </div>
+    
                     <div>
                         <label for="purchaseDate" class="block text-sm font-medium text-gray-400 mb-1">Transaction Date</label>
                         <input type="date" id="purchaseDate" value="${today}" class="form-input">
