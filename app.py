@@ -893,4 +893,4 @@ def update_page_content(page_name):
 
 if __name__ == '__main__':
     # Use a different port if needed, e.g., app.run(debug=True, port=5001)
-    app.run(debug=Tr
+    app.run(debug=True)
