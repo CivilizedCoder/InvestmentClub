@@ -153,11 +153,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Combined handler for all collapsible headers
             const collapsibleHeader = e.target.closest('.collapsible-header, .portfolio-section-header');
             if (collapsibleHeader) {
                 const content = collapsibleHeader.nextElementSibling;
-                collapsibleHeader.classList.toggle('open');
-                content.classList.toggle('open');
+                const isOpen = collapsibleHeader.classList.toggle('open');
+                if (content) content.classList.toggle('open');
+            
+                // If it's a portfolio section, also update the state tracker
+                const portfolioSection = collapsibleHeader.closest('.portfolio-section');
+                if (portfolioSection) {
+                    const sectionName = portfolioSection.dataset.sectionName;
+                    if (sectionName) {
+                        sectionCollapseStates[sectionName] = isOpen;
+                    }
+                }
+                return;
             }
             
             const transactionLink = e.target.closest('.transaction-link');
@@ -477,10 +488,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- SECTION STATE MANAGEMENT (to prevent collapsing on refresh) ---
     function saveSectionCollapseStates() {
-        const sections = document.querySelectorAll('.portfolio-section-header');
-        sections.forEach(header => {
-            const sectionName = header.closest('.portfolio-section').dataset.sectionName;
-            if (sectionName) {
+        const sections = document.querySelectorAll('.portfolio-section');
+        sections.forEach(section => {
+            const sectionName = section.dataset.sectionName;
+            const header = section.querySelector('.portfolio-section-header');
+            if (sectionName && header) {
                 sectionCollapseStates[sectionName] = header.classList.contains('open');
             }
         });
@@ -488,10 +500,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function applySectionCollapseStates() {
         Object.keys(sectionCollapseStates).forEach(sectionName => {
-            if (sectionCollapseStates[sectionName]) {
-                const header = document.querySelector(`.portfolio-section[data-section-name="${sectionName}"] .portfolio-section-header`);
+            const section = document.querySelector(`.portfolio-section[data-section-name="${sectionName}"]`);
+            if (section) {
+                const header = section.querySelector('.portfolio-section-header');
                 const content = header?.nextElementSibling;
-                if (header && content) {
+                // Apply the saved state only if it was 'open'
+                if (sectionCollapseStates[sectionName] && header && content) {
                     header.classList.add('open');
                     content.classList.add('open');
                 }
@@ -712,6 +726,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const searchContent = document.getElementById('searchContent');
         const formatCurrency = (val) => val != null ? `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
         const formatLargeNumber = (val) => val != null ? Number(val).toLocaleString() : 'N/A';
+        const timeframeButtons = ['1D', '1W', '1M', '3M', '1Y', 'MAX'];
     
         let contentHtml = `
             <h2 class="text-3xl font-bold mb-4">Stock Search</h2>
@@ -758,7 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
                          <div id="stockReturnStats" class="text-right"></div>
                     </div>
                     <div class="flex space-x-2 mb-4">
-                        ${['1D', '1W', '1M', '1Y', '5Y', 'MAX'].map(t => `<button class="timeframe-btn" data-chart="stock" data-range="${t}">${t}</button>`).join('')}
+                        ${timeframeButtons.map(t => `<button class="timeframe-btn" data-chart="stock" data-range="${t}">${t}</button>`).join('')}
                     </div>
                     <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
                 </div>
@@ -793,7 +808,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     btn.classList.add('active');
                     
                     if (range === '1D') {
-                        fetchAndupdateStockChart(data.info.symbol, '1d', '5m');
+                        fetchAndUpdateIntradayStockChart(data.info.symbol, '1d', '5m');
                     } else {
                         updateChartAndStats(stockChart, data.historical, range, 'stockReturnStats', 'Close');
                     }
@@ -1183,6 +1198,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </p>
                     <p class="text-sm text-gray-400">Total Gain/Loss</p>
                 </div>
+                <i class="fas fa-chevron-right collapsible-icon"></i>
             </div>
             <div class="holding-list space-y-2">
                 ${section.holdings.map(h => createHoldingCard(h, section.currentValue)).join('') || '<p class="text-gray-500 p-4 text-center">Drag holdings here.</p>'}
@@ -1468,10 +1484,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const range = btn.dataset.range;
                 document.querySelectorAll('.timeframe-btn[data-chart="portfolio"]').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                updateChartAndStats(portfolioChart, portfolioHistoryData, range, 'portfolioReturnStats', 'Value');
+                updateChartAndStats(portfolioChart, portfolioHistoryData, range, 'portfolioReturnStats', 'ReturnIndex');
             });
         });
-        updateChartAndStats(portfolioChart, portfolioHistoryData, 'MAX', 'portfolioReturnStats', 'Value');
+        // Set default view
+        const defaultButton = document.querySelector('.timeframe-btn[data-chart="portfolio"].active') || document.querySelector('.timeframe-btn[data-chart="portfolio"][data-range="MAX"]');
+        if (defaultButton) {
+            updateChartAndStats(portfolioChart, portfolioHistoryData, defaultButton.dataset.range, 'portfolioReturnStats', 'ReturnIndex');
+        }
     }
 
     async function fetchPortfolioHistory() {
@@ -1496,8 +1516,51 @@ document.addEventListener('DOMContentLoaded', () => {
         if (portfolioChart) portfolioChart.destroy();
         
         portfolioChart = new Chart(ctx, {
-            type: 'line', data: { labels: [], datasets: [{ label: 'Portfolio Value', data: [], borderColor: '#22D3EE', backgroundColor: 'rgba(34, 211, 238, 0.1)', fill: true, tension: 0.1, pointRadius: 0 }] },
-            options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { type: 'time', time: { unit: 'day' }, grid: { display: false } }, y: { grid: { color: 'rgba(255, 255, 255, 0.1)' } } }, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1F2937', titleColor: '#E5E7EB', bodyColor: '#E5E7EB', borderColor: '#374151', borderWidth: 1, padding: 10, displayColors: false, callbacks: { title: (ctx) => new Date(ctx[0].parsed.x).toLocaleDateString(), label: (ctx) => `Value: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(ctx.parsed.y)}` } } } }
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Portfolio Performance',
+                    data: [],
+                    borderColor: '#22D3EE',
+                    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                    fill: true,
+                    tension: 0.1,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: { type: 'time', time: { unit: 'day' }, grid: { display: false } },
+                    y: {
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                        ticks: {
+                            callback: function(value, index, values) {
+                                return (value - 100).toFixed(0) + '%';
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1F2937', titleColor: '#E5E7EB', bodyColor: '#E5E7EB',
+                        borderColor: '#374151', borderWidth: 1, padding: 10, displayColors: false,
+                        callbacks: {
+                            title: (ctx) => new Date(ctx[0].parsed.x).toLocaleDateString(),
+                            label: (ctx) => {
+                                const value = ctx.parsed.y;
+                                const percentChange = value - 100;
+                                const sign = percentChange >= 0 ? '+' : '';
+                                return `Return: ${sign}${percentChange.toFixed(2)}%`;
+                            }
+                        }
+                    }
+                }
+            }
         });
     }
 
@@ -1512,7 +1575,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function fetchAndupdateStockChart(ticker, period, interval) {
+    async function fetchAndUpdateIntradayStockChart(ticker, period, interval) {
         try {
             const response = await fetch(`/api/stock/${ticker}/history?period=${period}&interval=${interval}`);
             if (!response.ok) throw new Error('Failed to fetch chart data');
@@ -1537,15 +1600,20 @@ document.addEventListener('DOMContentLoaded', () => {
     
         const now = new Date();
         let startDate = new Date();
-        const dateKey = fullData[0].Date ? 'Date' : 'Timestamp';
+        const dateKey = fullData[0] && fullData[0].Date ? 'Date' : 'Timestamp';
     
         switch (range) {
             case '1D': startDate.setDate(now.getDate() - 1); break;
             case '1W': startDate.setDate(now.getDate() - 7); break;
             case '1M': startDate.setMonth(now.getMonth() - 1); break;
+            case '3M': startDate.setMonth(now.getMonth() - 3); break;
             case '1Y': startDate.setFullYear(now.getFullYear() - 1); break;
             case '5Y': startDate.setFullYear(now.getFullYear() - 5); break;
-            case 'MAX': startDate = new Date(fullData[0][dateKey]); break;
+            case 'MAX': 
+                if (fullData.length > 0) {
+                    startDate = new Date(fullData[0][dateKey]); 
+                }
+                break;
         }
         
         const filteredData = fullData.filter(d => new Date(d[dateKey]) >= startDate);
@@ -1562,14 +1630,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const startValue = filteredData[0][dataKey];
         const endValue = filteredData[filteredData.length - 1][dataKey];
         const change = endValue - startValue;
-        const percentChange = startValue > 0 ? (change / startValue) * 100 : 0;
+        const percentChange = startValue !== 0 ? (change / startValue) * 100 : 0;
         const changeColor = change >= 0 ? 'positive' : 'negative';
         const sign = change >= 0 ? '+' : '';
     
         const statsContainer = document.getElementById(statsContainerId);
         if(statsContainer) {
+            let changeDisplay;
+            if (dataKey === 'ReturnIndex') {
+                changeDisplay = `${sign}${percentChange.toFixed(2)}%`;
+            } else {
+                changeDisplay = `${sign}${change.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} (${sign}${percentChange.toFixed(2)}%)`;
+            }
+            
             statsContainer.innerHTML = `
-                <p class="return-value ${changeColor}">${sign}${change.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} (${sign}${percentChange.toFixed(2)}%)</p>
+                <p class="return-value ${changeColor}">${changeDisplay}</p>
                 <p class="return-period">For selected period</p>
             `;
         }

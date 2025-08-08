@@ -688,54 +688,78 @@ def get_portfolio_history():
         hist_prices = yf.download(tickers, start=start_date, end=end_date, progress=False)['Close']
         if isinstance(hist_prices, pd.Series):
             hist_prices = hist_prices.to_frame(name=tickers[0])
-        hist_prices = hist_prices.ffill().bfill() # Forward and back fill to handle missing data
+        hist_prices = hist_prices.ffill().bfill()
 
         full_date_range = pd.date_range(start=start_date, end=end_date)
-        transactions_by_date = trans_df.groupby(trans_df['date'])
+        
+        # Group transactions by date for efficient processing
+        trans_df['date_only'] = trans_df['date'].dt.normalize()
+        transactions_by_date = trans_df.groupby('date_only')
 
-        holdings = {}
-        daily_data = []
-
+        holdings = {} # symbol -> {'quantity': float}
+        daily_values = []
+        
+        # This loop calculates the raw portfolio value and cash flows for each day
         for current_date in full_date_range:
+            net_cash_flow = 0
+            
+            # Process transactions for the current day
             if current_date in transactions_by_date.groups:
                 day_trans = transactions_by_date.get_group(current_date)
                 for _, tx in day_trans.iterrows():
                     symbol = tx['symbol']
                     if symbol not in holdings:
-                        holdings[symbol] = {'quantity': 0, 'totalCost': 0}
+                        holdings[symbol] = {'quantity': 0}
                     
-                    position = holdings[symbol]
                     if tx['transactionType'] == 'buy':
-                        position['quantity'] += tx['quantity']
-                        position['totalCost'] += tx['dollarValue']
+                        holdings[symbol]['quantity'] += tx['quantity']
+                        net_cash_flow += tx['dollarValue']
                     else: # sell
-                        if position['quantity'] > 0:
-                            avg_cost_per_share = position['totalCost'] / position['quantity']
-                            cost_of_goods_sold = avg_cost_per_share * tx['quantity']
-                            position['quantity'] -= tx['quantity']
-                            position['totalCost'] -= cost_of_goods_sold
+                        holdings[symbol]['quantity'] -= tx['quantity']
+                        net_cash_flow -= tx['dollarValue']
             
+            # Calculate total portfolio value at the end of the day
             current_day_value = 0
-            current_day_cost = 0
-            
             price_date = current_date if current_date in hist_prices.index else None
             if price_date:
                 for symbol, pos_data in holdings.items():
                     if pos_data['quantity'] > 0.00001:
-                        if symbol in hist_prices.columns:
-                            price = hist_prices.loc[price_date, symbol]
-                            if pd.notna(price):
-                                current_day_value += pos_data['quantity'] * price
-                        current_day_cost += pos_data['totalCost']
+                        if symbol in hist_prices.columns and pd.notna(hist_prices.loc[price_date, symbol]):
+                            current_day_value += pos_data['quantity'] * hist_prices.loc[price_date, symbol]
+            
+            daily_values.append({
+                'Date': current_date,
+                'Value': current_day_value,
+                'CashFlow': net_cash_flow
+            })
 
-            if current_day_value > 0 or current_day_cost > 0:
-                 daily_data.append({
-                    'Date': current_date.strftime('%Y-%m-%d'),
-                    'Value': current_day_value,
-                    'Cost': current_day_cost
+        # This loop calculates the performance index, isolating returns from cash flows
+        performance_data = []
+        return_index = 100.0 # Start index at 100
+
+        for i, day in enumerate(daily_values):
+            if i == 0:
+                performance_data.append({
+                    'Date': day['Date'].strftime('%Y-%m-%d'),
+                    'ReturnIndex': return_index
                 })
-        
-        return jsonify(clean_nan(daily_data))
+                continue
+
+            v_yesterday = daily_values[i-1]['Value']
+            v_today = day['Value']
+            cash_flow_today = day['CashFlow']
+
+            if v_yesterday > 0.01:
+                # The core Time-Weighted Return calculation for a single day
+                daily_return = (v_today - v_yesterday - cash_flow_today) / v_yesterday
+                return_index *= (1 + daily_return)
+
+            performance_data.append({
+                'Date': day['Date'].strftime('%Y-%m-%d'),
+                'ReturnIndex': return_index
+            })
+
+        return jsonify(clean_nan(performance_data))
 
     except Exception as e:
         print(f"Error calculating portfolio history: {e}")

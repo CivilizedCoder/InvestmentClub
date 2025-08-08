@@ -259,7 +259,8 @@ body {
     transition: transform 0.3s ease;
 }
 
-.collapsible-header.open .collapsible-icon {
+.collapsible-header.open .collapsible-icon,
+.portfolio-section-header.open .collapsible-icon {
     transform: rotate(90deg);
 }
 
@@ -326,7 +327,7 @@ body {
 /* --- PORTFOLIO BREAKDOWN & DRAG-AND-DROP --- */
 .portfolio-sections-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
     gap: 1.5rem;
 }
 
@@ -351,7 +352,7 @@ body {
 
 .holding-list.open {
     max-height: 1000px; /* Adjust as needed */
-    padding: 1rem 0;
+    padding-top: 1rem;
 }
 
 /* --- EDITABLE CONTENT & FLEXIBLE CARDS --- */
