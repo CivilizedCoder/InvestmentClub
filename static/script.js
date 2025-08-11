@@ -940,13 +940,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const isMember = currentUser.loggedIn && currentUser.role !== 'guest';
         summaryTitle.textContent = isMember ? 'Portfolio Snapshot' : 'Club Watchlist';
     
-        const currentPositions = aggregatePortfolio(transactions);
-        const positionSymbols = new Set(currentPositions.map(p => p.symbol));
-        const watchlistItems = transactions.filter(t => !t.isReal && !positionSymbols.has(t.symbol));
+        // `transactions` global variable is pre-populated based on user type
+        // Guests: `transactions` contains ONLY watchlist items from `fetchWatchlist()`
+        // Members/Admins: `transactions` contains ALL items (real and watchlist) from `fetchTransactions()`
     
-        // For guests, we only show watchlist items.
-        const itemsToDisplay = isMember ? [...currentPositions, ...watchlistItems] : watchlistItems;
-    
+        let itemsToDisplay = [];
+        if (isMember) {
+            // For members, we need to separate real positions from watchlist items
+            const currentPositions = aggregatePortfolio(transactions);
+            const positionSymbols = new Set(currentPositions.map(p => p.symbol));
+            const watchlistItems = transactions.filter(t => !t.isReal && !positionSymbols.has(t.symbol));
+            itemsToDisplay = [...currentPositions, ...watchlistItems];
+        } else {
+            // For guests, `transactions` is already just the watchlist.
+            // We filter for !t.isReal just to be safe.
+            itemsToDisplay = transactions.filter(t => !t.isReal);
+        }
+        
         if (itemsToDisplay.length === 0) {
             const message = isMember ? 'No items in portfolio or watchlist.' : 'The watchlist is currently empty.';
             summaryList.innerHTML = `<p class="col-span-full text-center text-gray-500 card">${message}</p>`;
@@ -967,19 +977,30 @@ document.addEventListener('DOMContentLoaded', () => {
     
             itemsToDisplay.forEach(item => {
                 const quote = quotes[item.symbol];
-                const isWatchlist = !item.hasOwnProperty('totalCost');
-                const price = isWatchlist ? (item.price || 0) : (item.totalCost / item.quantity);
+                // 'isWatchlist' is true if it's not a real, aggregated position.
+                // A real position has a `totalCost` property from `aggregatePortfolio`.
+                // A watchlist item from the DB does not.
+                const isWatchlist = !item.hasOwnProperty('totalCost'); 
+                
+                // For watchlist items, the price is the last known price. For real positions, we calculate average cost.
+                const basePrice = isWatchlist ? (item.price || 0) : (item.totalCost / item.quantity);
     
-                const currentPrice = quote?.currentPrice ?? price;
-                const priceChange = currentPrice - (quote?.previousClose ?? price);
+                const currentPrice = quote?.currentPrice ?? basePrice;
+                const priceChange = currentPrice - (quote?.previousClose ?? basePrice);
                 const priceChangePercent = (quote?.previousClose ?? 0) > 0 ? (priceChange / quote.previousClose) * 100 : 0;
                 const changeColor = priceChange >= 0 ? 'text-green-400' : 'text-red-400';
                 
                 const card = document.createElement('div');
                 card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
                 card.dataset.symbol = item.symbol;
+    
+                // The delete button should only show for watchlist items, but anyone can use it.
+                const deleteButtonHtml = isWatchlist 
+                    ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Remove from Watchlist"><i class="fas fa-times-circle"></i></button>` 
+                    : '';
+    
                 card.innerHTML = `
-                    ${isWatchlist ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Remove from Watchlist"><i class="fas fa-times-circle"></i></button>` : ''}
+                    ${deleteButtonHtml}
                     <div class="summary-card-content">
                         <div class="flex justify-between items-center">
                             <p class="font-bold text-lg">${item.symbol}</p>

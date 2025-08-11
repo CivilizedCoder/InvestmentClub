@@ -469,12 +469,12 @@ def add_transaction():
         return jsonify({"error": "Forbidden: Only admins can add real transactions."}), 403
     
     if data.get('transactionType') == 'sell':
-        holdings_stream = db.collection('holdings').where('symbol', '==', data['symbol']).where('is_real', '==', True).stream()
+        holdings_stream = db.collection('holdings').where('symbol', '==', data['symbol']).where('isReal', '==', True).stream()
         buys = 0
         sells = 0
         for doc in holdings_stream:
             tx = doc.to_dict()
-            if tx.get('transaction_type') == 'buy':
+            if tx.get('transactionType') == 'buy':
                 buys += tx.get('quantity', 0)
             else:
                 sells += tx.get('quantity', 0)
@@ -493,7 +493,7 @@ def add_transaction():
         long_name = data['longName']
 
     new_transaction_data = {
-        'symbol': data['symbol'],
+        'symbol': data['symbol'].upper(),
         'longName': long_name,
         'sector': sector,
         'isReal': data['isReal'],
@@ -529,6 +529,7 @@ def delete_transaction(transaction_id):
     
     transaction_ref.delete()
     return jsonify({"message": "Transaction deleted successfully"})
+
 
 @app.route('/api/portfolio/section', methods=['POST'])
 @login_required
