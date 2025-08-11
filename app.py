@@ -373,42 +373,53 @@ def get_status():
 def get_homepage_data():
     is_member = current_user.is_authenticated and current_user.role != 'guest'
     
-    if is_member:
-        # Members/Admins see portfolio and watchlist
-        title = "Portfolio Snapshot"
-        transactions_stream = db.collection('holdings').order_by('date').stream()
-        all_transactions = [doc_to_dict_with_id(doc) for doc in transactions_stream]
-        
-        real_positions = aggregate_portfolio(all_transactions)
-        real_position_symbols = {p['symbol'] for p in real_positions}
-        
-        watchlist_items = [
-            tx for tx in all_transactions 
-            if not tx.get('isReal') and tx.get('symbol') not in real_position_symbols
-        ]
-        
-        items_to_display = real_positions + watchlist_items
-        
-    else:
-        # Guests see only the watchlist
-        title = "Club Watchlist"
-        watchlist_stream = db.collection('holdings').where('isReal', '==', False).order_by('date').stream()
-        items_to_display = [doc_to_dict_with_id(doc) for doc in watchlist_stream]
+    try:
+        if is_member:
+            # Members/Admins see portfolio and watchlist
+            title = "Portfolio Snapshot"
+            transactions_stream = db.collection('holdings').stream() # No sort here
+            all_transactions = [doc_to_dict_with_id(doc) for doc in transactions_stream]
+            
+            real_positions = aggregate_portfolio(all_transactions)
+            real_position_symbols = {p['symbol'] for p in real_positions}
+            
+            watchlist_items = [
+                tx for tx in all_transactions 
+                if not tx.get('isReal') and tx.get('symbol') not in real_position_symbols
+            ]
+            
+            # Sort watchlist items in Python
+            watchlist_items.sort(key=lambda x: x.get('date', ''), reverse=True)
+            
+            items_to_display = real_positions + watchlist_items
+            
+        else:
+            # Guests see only the watchlist
+            title = "Club Watchlist"
+            # FIX: Remove order_by to prevent index error. Sorting is done in Python.
+            watchlist_stream = db.collection('holdings').where('isReal', '==', False).stream()
+            items_to_display_unsorted = [doc_to_dict_with_id(doc) for doc in watchlist_stream]
+            # Sort the results in the application code instead of the query
+            items_to_display = sorted(items_to_display_unsorted, key=lambda x: x.get('date', ''), reverse=True)
 
-    # Fetch quotes for all items
-    tickers = list(set(item['symbol'] for item in items_to_display if item.get('symbol')))
-    quotes = get_yfinance_quotes(tickers)
+        # Fetch quotes for all items
+        tickers = list(set(item['symbol'] for item in items_to_display if item.get('symbol')))
+        quotes = get_yfinance_quotes(tickers)
 
-    # Add quote data to each item
-    for item in items_to_display:
-        symbol = item.get('symbol')
-        if symbol and symbol in quotes:
-            item['quote'] = quotes[symbol]
+        # Add quote data to each item
+        for item in items_to_display:
+            symbol = item.get('symbol')
+            if symbol and symbol in quotes:
+                item['quote'] = quotes[symbol]
 
-    return jsonify({
-        "title": title,
-        "items": clean_nan(items_to_display)
-    })
+        return jsonify({
+            "title": title,
+            "items": clean_nan(items_to_display)
+        })
+    except Exception as e:
+        print(f"Error in get_homepage_data: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
 
 # ... (Keep all yfinance routes: /api/quotes, /api/stock/<ticker_symbol>/history, /api/stock/<ticker_symbol>)
 # These routes do not interact with the database and can remain unchanged.
