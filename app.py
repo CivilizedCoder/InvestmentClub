@@ -510,15 +510,23 @@ def add_transaction():
     return jsonify(new_transaction_data), 201
 
 @app.route('/api/transaction/<string:transaction_id>', methods=['DELETE'])
-@login_required
 def delete_transaction(transaction_id):
-    if current_user.role != 'admin':
-        return jsonify({"error": "Forbidden: Only admins can delete transactions."}), 403
-    
     transaction_ref = db.collection('holdings').document(transaction_id)
-    if not transaction_ref.get().exists:
+    transaction_doc = transaction_ref.get()
+
+    if not transaction_doc.exists:
         return jsonify({"error": "Transaction not found"}), 404
-        
+
+    transaction_data = transaction_doc.to_dict()
+    is_real_transaction = transaction_data.get('isReal', False)
+
+    # Real transactions can only be deleted by logged-in admins
+    if is_real_transaction:
+        if not current_user.is_authenticated or current_user.role != 'admin':
+            return jsonify({"error": "Forbidden: Only admins can delete real transactions."}), 403
+    
+    # For watchlist items (isReal=False), anyone can delete.
+    
     transaction_ref.delete()
     return jsonify({"message": "Transaction deleted successfully"})
 

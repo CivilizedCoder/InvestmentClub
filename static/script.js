@@ -117,10 +117,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const deleteButton = e.target.closest('.delete-on-card-btn, .delete-in-table-btn');
             if (deleteButton) {
                 e.stopPropagation();
-                const transactionId = parseInt(deleteButton.dataset.id, 10);
+                const transactionId = deleteButton.dataset.id; // Firestore IDs are strings
                 promptForConfirmation(
-                    'Delete Transaction',
-                    'Are you sure you want to delete this transaction? This action cannot be undone.',
+                    'Delete Item',
+                    'Are you sure you want to delete this item? This action cannot be undone.',
                     () => confirmDeleteTransaction(transactionId)
                 );
                 return;
@@ -937,31 +937,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryTitle = document.querySelector('#portfolioSummary h3');
         if (!summaryList || !summaryTitle) return;
     
-        summaryTitle.textContent = (currentUser.loggedIn && currentUser.role !== 'guest') ? 'Portfolio Snapshot' : 'Club Watchlist';
+        const isMember = currentUser.loggedIn && currentUser.role !== 'guest';
+        summaryTitle.textContent = isMember ? 'Portfolio Snapshot' : 'Club Watchlist';
     
         const currentPositions = aggregatePortfolio(transactions);
         const positionSymbols = new Set(currentPositions.map(p => p.symbol));
         const watchlistItems = transactions.filter(t => !t.isReal && !positionSymbols.has(t.symbol));
     
-        if (watchlistItems.length === 0 && currentPositions.length === 0) {
-            summaryList.innerHTML = '<p class="col-span-full text-center text-gray-500 card">No items to display.</p>';
+        // For guests, we only show watchlist items.
+        const itemsToDisplay = isMember ? [...currentPositions, ...watchlistItems] : watchlistItems;
+    
+        if (itemsToDisplay.length === 0) {
+            const message = isMember ? 'No items in portfolio or watchlist.' : 'The watchlist is currently empty.';
+            summaryList.innerHTML = `<p class="col-span-full text-center text-gray-500 card">${message}</p>`;
             return;
         }
     
         try {
-            const tickers = [...new Set([...currentPositions.map(p => p.symbol), ...watchlistItems.map(t => t.symbol)])];
+            const tickers = [...new Set(itemsToDisplay.map(item => item.symbol))];
+            if (tickers.length === 0) {
+                summaryList.innerHTML = ''; // Clear if no tickers
+                return;
+            }
             const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
             if (!response.ok) throw new Error('Failed to fetch quotes');
             
             const quotes = await response.json();
             summaryList.innerHTML = '';
     
-            const allItems = [...currentPositions, ...watchlistItems];
-    
-            allItems.forEach(item => {
+            itemsToDisplay.forEach(item => {
                 const quote = quotes[item.symbol];
                 const isWatchlist = !item.hasOwnProperty('totalCost');
-                const price = isWatchlist ? item.price : item.totalCost / item.quantity;
+                const price = isWatchlist ? (item.price || 0) : (item.totalCost / item.quantity);
     
                 const currentPrice = quote?.currentPrice ?? price;
                 const priceChange = currentPrice - (quote?.previousClose ?? price);
@@ -972,7 +979,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
                 card.dataset.symbol = item.symbol;
                 card.innerHTML = `
-                    ${isWatchlist && currentUser.role === 'admin' ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Delete"><i class="fas fa-times-circle"></i></button>` : ''}
+                    ${isWatchlist ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Remove from Watchlist"><i class="fas fa-times-circle"></i></button>` : ''}
                     <div class="summary-card-content">
                         <div class="flex justify-between items-center">
                             <p class="font-bold text-lg">${item.symbol}</p>

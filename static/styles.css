@@ -209,8 +209,8 @@ body {
 
 .delete-on-card-btn {
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
+    top: 0.25rem;
+    right: 0.25rem;
     z-index: 10;
     background: none;
     border: none;
