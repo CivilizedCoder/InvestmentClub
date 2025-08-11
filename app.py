@@ -109,6 +109,73 @@ def doc_to_dict_with_id(doc):
             data[key] = value.isoformat() + 'Z'
     return data
 
+def get_yfinance_quotes(tickers_list):
+    """Helper to fetch quotes from a list of tickers."""
+    if not tickers_list:
+        return {}
+    tickers_str = " ".join(tickers_list)
+    try:
+        tickers = yf.Tickers(tickers_str)
+        quotes = {}
+        for ts, t in tickers.tickers.items():
+            info = t.info
+            # Check if info was successfully fetched
+            if info and info.get('regularMarketPrice') is not None:
+                quotes[ts] = {
+                    'currentPrice': info.get('regularMarketPrice'),
+                    'previousClose': info.get('previousClose'),
+                    'sector': info.get('sector', 'N/A')
+                }
+            else:
+                # Handle cases where ticker is invalid or data is missing
+                quotes[ts] = None 
+        return quotes
+    except Exception as e:
+        print(f"Error fetching yfinance quotes: {e}")
+        return {}
+
+def aggregate_portfolio(all_transactions):
+    """Aggregates real transactions into current positions."""
+    portfolio = {}
+    # Ensure transactions are sorted by date to process buys before sells
+    sorted_transactions = sorted(all_transactions, key=lambda tx: tx.get('date', ''))
+
+    for tx in sorted_transactions:
+        if not tx.get('isReal'):
+            continue
+
+        symbol = tx['symbol']
+        if symbol not in portfolio:
+            if tx.get('transactionType') == 'sell':
+                continue # Skip sell if no prior buy
+            portfolio[symbol] = {
+                'symbol': symbol,
+                'longName': tx.get('longName'),
+                'sector': tx.get('sector'),
+                'customSection': tx.get('customSection'),
+                'quantity': 0,
+                'totalCost': 0,
+            }
+        
+        pos = portfolio[symbol]
+        quantity = tx.get('quantity', 0)
+        dollar_value = tx.get('dollarValue', 0)
+
+        if tx.get('transactionType') == 'buy':
+            pos['quantity'] += quantity
+            pos['totalCost'] += dollar_value
+        else: # Sell
+            if pos['quantity'] > 0:
+                avg_cost = pos['totalCost'] / pos['quantity']
+                cost_of_sold = avg_cost * quantity
+                pos['quantity'] -= quantity
+                pos['totalCost'] -= cost_of_sold
+        
+        pos['customSection'] = tx.get('customSection')
+
+    return [p for p in portfolio.values() if p.get('quantity', 0) > 0.00001]
+
+
 # --- AUTHENTICATION ROUTES ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -302,6 +369,47 @@ def get_status():
     else:
         return jsonify({'loggedIn': False})
 
+@app.route('/api/homepage-data')
+def get_homepage_data():
+    is_member = current_user.is_authenticated and current_user.role != 'guest'
+    
+    if is_member:
+        # Members/Admins see portfolio and watchlist
+        title = "Portfolio Snapshot"
+        transactions_stream = db.collection('holdings').order_by('date').stream()
+        all_transactions = [doc_to_dict_with_id(doc) for doc in transactions_stream]
+        
+        real_positions = aggregate_portfolio(all_transactions)
+        real_position_symbols = {p['symbol'] for p in real_positions}
+        
+        watchlist_items = [
+            tx for tx in all_transactions 
+            if not tx.get('isReal') and tx.get('symbol') not in real_position_symbols
+        ]
+        
+        items_to_display = real_positions + watchlist_items
+        
+    else:
+        # Guests see only the watchlist
+        title = "Club Watchlist"
+        watchlist_stream = db.collection('holdings').where('isReal', '==', False).order_by('date').stream()
+        items_to_display = [doc_to_dict_with_id(doc) for doc in watchlist_stream]
+
+    # Fetch quotes for all items
+    tickers = list(set(item['symbol'] for item in items_to_display if item.get('symbol')))
+    quotes = get_yfinance_quotes(tickers)
+
+    # Add quote data to each item
+    for item in items_to_display:
+        symbol = item.get('symbol')
+        if symbol and symbol in quotes:
+            item['quote'] = quotes[symbol]
+
+    return jsonify({
+        "title": title,
+        "items": clean_nan(items_to_display)
+    })
+
 # ... (Keep all yfinance routes: /api/quotes, /api/stock/<ticker_symbol>/history, /api/stock/<ticker_symbol>)
 # These routes do not interact with the database and can remain unchanged.
 @app.route('/api/quotes', methods=['POST'])
@@ -437,16 +545,6 @@ def get_stock_data(ticker_symbol):
         return jsonify({"error": f"An error occurred while fetching data for {ticker_symbol}. See server logs."}), 500
 
 # --- DATABASE API ENDPOINTS ---
-
-@app.route('/api/watchlist', methods=['GET'])
-def get_watchlist():
-    try:
-        watchlist_stream = db.collection('holdings').where('isReal', '==', False).order_by('date').stream()
-        watchlist_items = [doc_to_dict_with_id(doc) for doc in watchlist_stream]
-        return jsonify(watchlist_items)
-    except Exception as e:
-        print(f"Error fetching watchlist: {e}")
-        return jsonify({"error": "Could not fetch watchlist"}), 500
 
 @app.route('/api/portfolio', methods=['GET'])
 @login_required

@@ -207,10 +207,14 @@ body {
     border-left-color: #22D3EE; /* cyan-400 */
 }
 
+.summary-card-content {
+    position: relative;
+}
+
 .delete-on-card-btn {
     position: absolute;
-    top: 0.25rem;
-    right: 0.25rem;
+    top: 0.5rem;
+    right: 0.5rem;
     z-index: 10;
     background: none;
     border: none;

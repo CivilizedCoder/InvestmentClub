@@ -3,7 +3,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBAL STATE ---
     let stockChart;
     let currentStockData = null;
-    let transactions = []; // This now holds all transactions, not just current holdings
+    let transactions = []; // Holds all transaction data for logged-in members
+    let homepageData = { title: 'Loading...', items: [] }; // Holds data for the homepage view
     let recentSearches = [];
     const MAX_RECENT_SEARCHES = 5;
     let actionToConfirm = null; // A function to execute when modal is confirmed
@@ -15,31 +16,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- INITIALIZATION ---
     async function initialize() {
         initializeEventListeners();
-        // Fetch user status first to determine permissions before loading data
         await fetchUserStatus(); 
         
-        // Fetch data based on login status
-        if (currentUser.loggedIn && currentUser.role !== 'guest') {
-            await fetchTransactions(); // Members/Admins get the full portfolio
-        } else {
-            await fetchWatchlist(); // Guests get only the public watchlist
-        }
+        // Fetch data required for the initial view (homepage)
+        await fetchHomepageData();
         
-        // Update UI based on permissions and then activate the default tab
         updateUIVisibility();
-        activateTab('home');
+        activateTab('home'); // This will call renderPortfolioSummary which now uses homepageData
 
-        // Fetch public content
+        // Fetch other content lazily
         await fetchPageContent('about');
         await fetchPageContent('internships');
         
-        // Set an interval to auto-refresh prices every 10 seconds
-        setInterval(autoRefreshPrices, 10000);
-        // Set an interval to refresh presentation vote timers
-        setInterval(renderPresentations, 60000);
+        // Set intervals for auto-refreshing data
+        setInterval(fetchHomepageData, 15000); // Refresh homepage data every 15s
+        setInterval(renderPresentations, 60000); // Refresh presentation vote timers
     }
 
-    // --- AUTHENTICATION & USER STATUS ---
+    // --- DATA FETCHING ---
     async function fetchUserStatus() {
         try {
             const response = await fetch('/api/status');
@@ -58,38 +52,45 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Error fetching user status:", error);
             currentUser = { loggedIn: false, username: 'Guest', role: 'guest' };
         }
-        // Update the auth section in the sidebar
         renderAuthSection();
     }
 
-    function renderAuthSection() {
-        const authSection = document.getElementById('auth-section');
-        if (!authSection) return;
-
-        if (currentUser.loggedIn) {
-            authSection.innerHTML = `
-                <div class="text-center mb-2">
-                    <p class="font-semibold text-white">${currentUser.username}</p>
-                    <p class="text-sm text-gray-400 capitalize">${currentUser.role}</p>
-                </div>
-                <a href="/logout" class="button-secondary w-full text-center">Logout</a>
-            `;
-        } else {
-            authSection.innerHTML = `
-                <a href="/login" class="button-primary w-full text-center">Login / Register</a>
-            `;
+    async function fetchHomepageData() {
+        try {
+            const response = await fetch('/api/homepage-data');
+            if (!response.ok) throw new Error('Failed to fetch homepage data');
+            homepageData = await response.json();
+            
+            // If the active tab is home, re-render it
+            const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
+            if (activeTab === 'home') {
+                renderPortfolioSummary();
+            }
+        } catch (error) {
+            console.error("Error fetching homepage data:", error);
+            const summaryList = document.getElementById('portfolioSummaryList');
+            if (summaryList) {
+                summaryList.innerHTML = `<p class="text-red-400 col-span-full text-center">Could not load dashboard data.</p>`;
+            }
         }
     }
 
-    // --- AUTO-REFRESHER ---
-    function autoRefreshPrices() {
-        const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
-
-        if (activeTab === 'home') {
-            renderPortfolioSummary();
-        } else if (activeTab === 'portfolio') {
-            // This re-renders the dashboard but preserves the open/closed state of sections
-            renderPortfolioDashboard();
+    async function fetchTransactions() {
+        // This function is for member-only tabs that need the full transaction list
+        try {
+            const response = await fetch('/api/portfolio');
+            if (!response.ok) {
+                if (response.status === 401) {
+                    console.log("User not logged in. Cannot fetch transactions.");
+                    transactions = [];
+                    return;
+                }
+                throw new Error('Failed to fetch transactions');
+            }
+            transactions = await response.json();
+        } catch (error) {
+            console.error("Fetch transactions error:", error);
+            transactions = [];
         }
     }
 
@@ -233,7 +234,26 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('addInternshipsCardBtn').addEventListener('click', () => addContentCard('internships'));
     }
 
-    // --- USER PERMISSIONS ---
+    // --- UI & NAVIGATION ---
+    function renderAuthSection() {
+        const authSection = document.getElementById('auth-section');
+        if (!authSection) return;
+
+        if (currentUser.loggedIn) {
+            authSection.innerHTML = `
+                <div class="text-center mb-2">
+                    <p class="font-semibold text-white">${currentUser.username}</p>
+                    <p class="text-sm text-gray-400 capitalize">${currentUser.role}</p>
+                </div>
+                <a href="/logout" class="button-secondary w-full text-center">Logout</a>
+            `;
+        } else {
+            authSection.innerHTML = `
+                <a href="/login" class="button-primary w-full text-center">Login / Register</a>
+            `;
+        }
+    }
+
     function updateUIVisibility() {
         const role = currentUser.role;
         const loggedIn = currentUser.loggedIn;
@@ -276,7 +296,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- NAVIGATION & TAB CONTROL ---
     async function activateTab(tab) {
         document.querySelectorAll('.nav-link').forEach(lnk => lnk.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active-content'));
@@ -287,6 +306,13 @@ document.addEventListener('DOMContentLoaded', () => {
             targetContent.classList.add('active-content');
         }
         
+        // Lazy load data needed for specific tabs
+        const isMember = currentUser.loggedIn && currentUser.role !== 'guest';
+        if (isMember && (tab === 'transactions' || tab === 'portfolio') && transactions.length === 0) {
+            // If member navigates to a protected tab and data isn't loaded, load it.
+            await fetchTransactions();
+        }
+
         switch (tab) {
             case 'home': renderPortfolioSummary(); break;
             case 'search': renderSearchTab(currentStockData); break;
@@ -330,35 +356,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // --- DATABASE & PORTFOLIO LOGIC ---
-    async function fetchTransactions() {
-        try {
-            const response = await fetch('/api/portfolio');
-            if (!response.ok) {
-                if (response.status === 401) {
-                    console.log("User not logged in. Cannot fetch transactions.");
-                    transactions = [];
-                    return;
-                }
-                throw new Error('Failed to fetch transactions');
-            }
-            transactions = await response.json();
-        } catch (error) {
-            console.error("Fetch transactions error:", error);
-            transactions = [];
-        }
-    }
-
-    async function fetchWatchlist() {
-        try {
-            const response = await fetch('/api/watchlist');
-            if (!response.ok) throw new Error('Failed to fetch watchlist');
-            transactions = await response.json();
-        } catch (error) {
-            console.error("Fetch watchlist error:", error);
-            transactions = [];
-        }
-    }
-
     async function addTransaction() {
         if (!currentStockData) return;
         const isReal = document.getElementById('isRealCheckbox').checked;
@@ -403,9 +400,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     
         if (response.ok) {
-            const addedTransaction = await response.json();
-            transactions.push(addedTransaction);
             alert(`${newTransaction.symbol} transaction has been added.`);
+            fetchHomepageData(); // Refresh homepage to show new item
             const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
             if (activeTab) activateTab(activeTab);
         } else {
@@ -419,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`/api/transaction/${transactionId}`, { method: 'DELETE' });
             if (response.ok) {
-                transactions = transactions.filter(h => h.id !== transactionId);
+                fetchHomepageData(); // Refresh homepage to remove item
                 const currentTab = document.querySelector('.nav-link.active')?.dataset.tab;
                 if (currentTab) activateTab(currentTab);
             } else {
@@ -937,86 +933,56 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryTitle = document.querySelector('#portfolioSummary h3');
         if (!summaryList || !summaryTitle) return;
     
-        const isMember = currentUser.loggedIn && currentUser.role !== 'guest';
-        summaryTitle.textContent = isMember ? 'Portfolio Snapshot' : 'Club Watchlist';
-    
-        // `transactions` global variable is pre-populated based on user type
-        // Guests: `transactions` contains ONLY watchlist items from `fetchWatchlist()`
-        // Members/Admins: `transactions` contains ALL items (real and watchlist) from `fetchTransactions()`
-    
-        let itemsToDisplay = [];
-        if (isMember) {
-            // For members, we need to separate real positions from watchlist items
-            const currentPositions = aggregatePortfolio(transactions);
-            const positionSymbols = new Set(currentPositions.map(p => p.symbol));
-            const watchlistItems = transactions.filter(t => !t.isReal && !positionSymbols.has(t.symbol));
-            itemsToDisplay = [...currentPositions, ...watchlistItems];
-        } else {
-            // For guests, `transactions` is already just the watchlist.
-            // We filter for !t.isReal just to be safe.
-            itemsToDisplay = transactions.filter(t => !t.isReal);
-        }
+        summaryTitle.textContent = homepageData.title || 'Club Dashboard';
         
+        const itemsToDisplay = homepageData.items || [];
+    
         if (itemsToDisplay.length === 0) {
-            const message = isMember ? 'No items in portfolio or watchlist.' : 'The watchlist is currently empty.';
+            const message = homepageData.title === 'Club Watchlist' ? 'The watchlist is currently empty.' : 'No items in portfolio or watchlist.';
             summaryList.innerHTML = `<p class="col-span-full text-center text-gray-500 card">${message}</p>`;
             return;
         }
     
-        try {
-            const tickers = [...new Set(itemsToDisplay.map(item => item.symbol))];
-            if (tickers.length === 0) {
-                summaryList.innerHTML = ''; // Clear if no tickers
-                return;
-            }
-            const response = await fetch('/api/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers }) });
-            if (!response.ok) throw new Error('Failed to fetch quotes');
+        summaryList.innerHTML = ''; // Clear previous content
+    
+        itemsToDisplay.forEach(item => {
+            const quote = item.quote;
+            // isWatchlist is true if it's not a real, aggregated position.
+            // A real position has a `totalCost` property. A watchlist item does not.
+            const isWatchlist = !item.hasOwnProperty('totalCost'); 
             
-            const quotes = await response.json();
-            summaryList.innerHTML = '';
+            // For watchlist items, the price is the last known price. For real positions, we calculate average cost.
+            const basePrice = isWatchlist ? (item.price || 0) : (item.totalCost / item.quantity);
     
-            itemsToDisplay.forEach(item => {
-                const quote = quotes[item.symbol];
-                // 'isWatchlist' is true if it's not a real, aggregated position.
-                // A real position has a `totalCost` property from `aggregatePortfolio`.
-                // A watchlist item from the DB does not.
-                const isWatchlist = !item.hasOwnProperty('totalCost'); 
-                
-                // For watchlist items, the price is the last known price. For real positions, we calculate average cost.
-                const basePrice = isWatchlist ? (item.price || 0) : (item.totalCost / item.quantity);
+            const currentPrice = quote?.currentPrice ?? basePrice;
+            const priceChange = currentPrice - (quote?.previousClose ?? basePrice);
+            const priceChangePercent = (quote?.previousClose ?? 0) > 0 ? (priceChange / quote.previousClose) * 100 : 0;
+            const changeColor = priceChange >= 0 ? 'text-green-400' : 'text-red-400';
+            
+            const card = document.createElement('div');
+            card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
+            card.dataset.symbol = item.symbol;
     
-                const currentPrice = quote?.currentPrice ?? basePrice;
-                const priceChange = currentPrice - (quote?.previousClose ?? basePrice);
-                const priceChangePercent = (quote?.previousClose ?? 0) > 0 ? (priceChange / quote.previousClose) * 100 : 0;
-                const changeColor = priceChange >= 0 ? 'text-green-400' : 'text-red-400';
-                
-                const card = document.createElement('div');
-                card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
-                card.dataset.symbol = item.symbol;
+            // The delete button should only show for watchlist items, but anyone can use it.
+            const deleteButtonHtml = isWatchlist 
+                ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Remove from Watchlist"><i class="fas fa-times-circle"></i></button>` 
+                : '';
     
-                // The delete button should only show for watchlist items, but anyone can use it.
-                const deleteButtonHtml = isWatchlist 
-                    ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Remove from Watchlist"><i class="fas fa-times-circle"></i></button>` 
-                    : '';
-    
-                card.innerHTML = `
-                    ${deleteButtonHtml}
-                    <div class="summary-card-content">
-                        <div class="flex justify-between items-center">
-                            <p class="font-bold text-lg">${item.symbol}</p>
-                            <p class="font-semibold text-lg">${currentPrice != null ? '$' + currentPrice.toFixed(2) : 'N/A'}</p>
-                        </div>
-                        <p class="text-sm text-gray-400 truncate">${item.longName}</p>
-                        <div class="text-right mt-2 ${changeColor}">
-                            <span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span>
-                            <span> (${priceChangePercent.toFixed(2)}%)</span>
-                        </div>
-                    </div>`;
-                summaryList.appendChild(card);
-            });
-        } catch (error) {
-            summaryList.innerHTML = `<p class="text-red-400 col-span-full text-center">Could not load prices. ${error.message}</p>`;
-        }
+            card.innerHTML = `
+                ${deleteButtonHtml}
+                <div class="summary-card-content">
+                    <div class="flex justify-between items-start">
+                        <p class="font-bold text-lg">${item.symbol}</p>
+                        <p class="font-semibold text-lg text-right">${currentPrice != null ? '$' + currentPrice.toFixed(2) : 'N/A'}</p>
+                    </div>
+                    <p class="text-sm text-gray-400 truncate mt-1">${item.longName}</p>
+                    <div class="text-right mt-2 ${changeColor}">
+                        <span class="font-medium">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}</span>
+                        <span> (${priceChangePercent.toFixed(2)}%)</span>
+                    </div>
+                </div>`;
+            summaryList.appendChild(card);
+        });
     }
 
     function renderTransactionHistory() {
