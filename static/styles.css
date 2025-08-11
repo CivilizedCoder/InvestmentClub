@@ -213,20 +213,24 @@ body {
 
 .delete-on-card-btn {
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
+    top: -0.5rem;
+    right: -0.5rem;
     z-index: 10;
-    background: none;
-    border: none;
-    color: #6B7280;
+    background-color: #1F2937;
+    border-radius: 9999px;
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9CA3AF;
     cursor: pointer;
-    transition: color 0.2s ease;
-    padding: 0.25rem;
-    font-size: 1.1rem;
-    line-height: 1;
+    transition: all 0.2s ease;
+    border: 1px solid #374151;
 }
 .delete-on-card-btn:hover {
     color: #F87171;
+    transform: scale(1.1);
 }
 
 .delete-in-table-btn {

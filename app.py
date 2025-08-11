@@ -629,12 +629,15 @@ def delete_transaction(transaction_id):
     transaction_data = transaction_doc.to_dict()
     is_real_transaction = transaction_data.get('isReal', False)
 
-    # Real transactions can only be deleted by logged-in admins
-    if is_real_transaction:
-        if not current_user.is_authenticated or current_user.role != 'admin':
-            return jsonify({"error": "Forbidden: Only admins can delete real transactions."}), 403
+    # All deletions require a logged-in user.
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Forbidden: You must be logged in to delete items."}), 403
+
+    # Real transactions can only be deleted by admins.
+    if is_real_transaction and current_user.role != 'admin':
+        return jsonify({"error": "Forbidden: Only admins can delete real transactions."}), 403
     
-    # For watchlist items (isReal=False), anyone can delete.
+    # Watchlist items can be deleted by any logged-in user (member or admin).
     
     transaction_ref.delete()
     return jsonify({"message": "Transaction deleted successfully"})

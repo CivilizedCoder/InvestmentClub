@@ -947,11 +947,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
         itemsToDisplay.forEach(item => {
             const quote = item.quote;
-            // isWatchlist is true if it's not a real, aggregated position.
-            // A real position has a `totalCost` property. A watchlist item does not.
             const isWatchlist = !item.hasOwnProperty('totalCost'); 
             
-            // For watchlist items, the price is the last known price. For real positions, we calculate average cost.
             const basePrice = isWatchlist ? (item.price || 0) : (item.totalCost / item.quantity);
     
             const currentPrice = quote?.currentPrice ?? basePrice;
@@ -963,8 +960,9 @@ document.addEventListener('DOMContentLoaded', () => {
             card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
             card.dataset.symbol = item.symbol;
     
-            // The delete button should only show for watchlist items, but anyone can use it.
-            const deleteButtonHtml = isWatchlist 
+            // Show delete button only for logged-in users on watchlist items
+            const canDelete = currentUser.loggedIn && isWatchlist;
+            const deleteButtonHtml = canDelete
                 ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Remove from Watchlist"><i class="fas fa-times-circle"></i></button>` 
                 : '';
     
