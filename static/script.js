@@ -1076,11 +1076,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const actionColor = p.action === 'Buy' ? 'text-green-400' : 'text-red-400';
                 
                 let voteInfoHtml = '';
-                if (p.votesFor !== undefined && p.votesAgainst !== undefined) {
+                if (p.votes_for !== undefined && p.votes_against !== undefined) {
                     voteInfoHtml = `
                         <div class="flex items-center space-x-4">
-                            <span class="flex items-center"><i class="fas fa-thumbs-up text-green-500 mr-2"></i> ${p.votesFor}</span>
-                            <span class="flex items-center"><i class="fas fa-thumbs-down text-red-500 mr-2"></i> ${p.votesAgainst}</span>
+                            <span class="flex items-center"><i class="fas fa-thumbs-up text-green-500 mr-2"></i> ${p.votes_for}</span>
+                            <span class="flex items-center"><i class="fas fa-thumbs-down text-red-500 mr-2"></i> ${p.votes_against}</span>
                         </div>
                     `;
                 }
@@ -1102,7 +1102,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
 
-                const timeRemaining = formatTimeRemaining(p.votingEndsAt);
+                const timeRemaining = formatTimeRemaining(p.voting_ends_at);
                 const timeStatusColor = p.isVotingOpen ? 'text-yellow-400' : 'text-gray-400';
 
                 card.innerHTML = `
@@ -1505,7 +1505,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getTimeRemaining(endtime) {
-        const total = Date.parse(endtime) - Date.parse(new Date());
+        // FIX: Directly create a Date object from the ISO string.
+        // This is more reliable than Date.parse() across browsers.
+        const total = new Date(endtime) - new Date();
         return {
             total,
             days: Math.floor(total / (1000 * 60 * 60 * 24)),
