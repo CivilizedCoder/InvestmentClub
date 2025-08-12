@@ -724,42 +724,49 @@ def update_holding_section():
 @login_required
 def get_presentations():
     try:
-        # Fetch without ordering to avoid needing a custom Firestore index.
         presentations_stream = db.collection('presentations').stream()
+        presentations_unsorted = [doc_to_dict_with_id(doc) for doc in presentations_stream if doc is not None]
         
-        # Convert to a list of dicts first.
-        presentations_unsorted = [doc_to_dict_with_id(doc) for doc in presentations_stream]
-        
-        # Now, sort the list in Python. The ISO-formatted date string can be sorted alphabetically.
+        # Safely sort the list in Python, providing a default for 'created_at' if it's missing.
         presentations_list = sorted(
             presentations_unsorted, 
-            key=lambda p: p.get('created_at', ''), 
+            key=lambda p: p.get('created_at', '1970-01-01T00:00:00Z'), 
             reverse=True
         )
 
-        # The rest of the processing happens on the sorted list.
+        processed_presentations = []
         for p_data in presentations_list:
-            # Note: Using naive datetimes for comparison, which is consistent with original code.
-            is_voting_open = datetime.fromisoformat(p_data['votingEndsAt'].replace('Z', '')) > datetime.utcnow()
+            # Safely get the voting end time.
+            voting_ends_at_str = p_data.get('votingEndsAt')
+            is_voting_open = False
+            if voting_ends_at_str:
+                try:
+                    # Compare timezone-aware datetimes.
+                    voting_ends_dt = datetime.fromisoformat(voting_ends_at_str.replace('Z', '+00:00'))
+                    is_voting_open = voting_ends_dt > datetime.now(voting_ends_dt.tzinfo)
+                except (ValueError, TypeError):
+                    # Handle cases where the date string is malformed.
+                    is_voting_open = False
+            
             p_data['isVotingOpen'] = is_voting_open
             p_data['hasVoted'] = False
             p_data['voteDirection'] = None
 
             if current_user.is_authenticated:
-                # The doc.id is now p_data['id']
                 vote_ref = db.collection('presentations').document(p_data['id']).collection('votes').document(current_user.id).get()
                 if vote_ref.exists:
                     p_data['hasVoted'] = True
                     p_data['voteDirection'] = vote_ref.to_dict().get('vote_type')
             
-            # Admins see votes anytime. Members only see after closing.
             if current_user.role != 'admin' and is_voting_open:
-                # FIX: The field names in the database use underscores.
                 p_data.pop('votes_for', None)
                 p_data.pop('votes_against', None)
             
-        return jsonify(presentations_list)
+            processed_presentations.append(p_data)
+            
+        return jsonify(processed_presentations)
     except Exception as e:
+        # Log the actual error for debugging.
         print(f"Error fetching presentations: {e}")
         return jsonify({"error": "Database error fetching presentations."}), 500
 
@@ -809,7 +816,10 @@ def vote_on_presentation(presentation_id):
         return jsonify({"error": "Presentation not found"}), 404
     
     presentation_data = presentation_doc.to_dict()
-    if datetime.utcnow() > presentation_data['voting_ends_at']:
+    
+    # Robust check for voting end time
+    voting_ends_at = presentation_data.get('voting_ends_at')
+    if not voting_ends_at or datetime.utcnow() > voting_ends_at:
         return jsonify({"error": "Voting for this presentation has closed."}), 403
     
     vote_ref = presentation_ref.collection('votes').document(current_user.id)
