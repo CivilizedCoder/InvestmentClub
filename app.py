@@ -724,27 +724,39 @@ def update_holding_section():
 @login_required
 def get_presentations():
     try:
-        presentations_stream = db.collection('presentations').order_by('created_at', direction=firestore.Query.DESCENDING).stream()
-        presentations_list = []
-        for doc in presentations_stream:
-            p_data = doc_to_dict_with_id(doc)
+        # Fetch without ordering to avoid needing a custom Firestore index.
+        presentations_stream = db.collection('presentations').stream()
+        
+        # Convert to a list of dicts first.
+        presentations_unsorted = [doc_to_dict_with_id(doc) for doc in presentations_stream]
+        
+        # Now, sort the list in Python. The ISO-formatted date string can be sorted alphabetically.
+        presentations_list = sorted(
+            presentations_unsorted, 
+            key=lambda p: p.get('created_at', ''), 
+            reverse=True
+        )
+
+        # The rest of the processing happens on the sorted list.
+        for p_data in presentations_list:
+            # Note: Using naive datetimes for comparison, which is consistent with original code.
             is_voting_open = datetime.fromisoformat(p_data['votingEndsAt'].replace('Z', '')) > datetime.utcnow()
             p_data['isVotingOpen'] = is_voting_open
             p_data['hasVoted'] = False
             p_data['voteDirection'] = None
 
             if current_user.is_authenticated:
-                vote_ref = db.collection('presentations').document(doc.id).collection('votes').document(current_user.id).get()
+                # The doc.id is now p_data['id']
+                vote_ref = db.collection('presentations').document(p_data['id']).collection('votes').document(current_user.id).get()
                 if vote_ref.exists:
                     p_data['hasVoted'] = True
                     p_data['voteDirection'] = vote_ref.to_dict().get('vote_type')
             
             # Admins see votes anytime. Members only see after closing.
             if current_user.role != 'admin' and is_voting_open:
-                p_data.pop('votesFor', None)
-                p_data.pop('votesAgainst', None)
-
-            presentations_list.append(p_data)
+                # FIX: The field names in the database use underscores.
+                p_data.pop('votes_for', None)
+                p_data.pop('votes_against', None)
             
         return jsonify(presentations_list)
     except Exception as e:
