@@ -383,13 +383,26 @@ def delete_user(user_id):
     if user_id == current_user.id:
         return jsonify({"error": "You cannot delete your own account."}), 400
 
-    # Firestore doesn't have cascading deletes, so we manually delete votes.
-    votes_query = db.collection_group('votes').where('user_id', '==', user_id).stream()
-    for vote in votes_query:
-        vote.reference.delete()
+    try:
+        # Manually delete user's votes to avoid needing a special index.
+        # This is less performant at scale but works without manual setup.
+        presentations_stream = db.collection('presentations').stream()
+        for presentation in presentations_stream:
+            vote_ref = presentation.reference.collection('votes').document(user_id)
+            vote_doc = vote_ref.get()
+            if vote_doc.exists:
+                vote_ref.delete()
 
-    user_ref.delete()
-    return jsonify({"message": "User deleted successfully"})
+        # After cleaning up votes, delete the user.
+        user_ref.delete()
+        
+        # Return a success message.
+        return jsonify({"message": "User and all associated votes have been deleted successfully."})
+
+    except Exception as e:
+        print(f"An error occurred during user deletion: {e}")
+        return jsonify({"error": "An internal error occurred while trying to delete the user."}), 500
+
 
 # --- HTML & API ROUTES ---
 @app.route('/')

@@ -1399,18 +1399,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function confirmDeleteUser(userId) {
+        hideConfirmationModal(); // Hide modal immediately
         try {
             const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+            const result = await response.json(); // Always expect JSON now
+    
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Failed to delete user.');
+                // If response is not OK, the 'result' object will contain the error message
+                throw new Error(result.error || 'An unknown error occurred.');
             }
-            alert('User deleted successfully.');
-            renderAdminPanel();
+    
+            // If response is OK, the 'result' object will contain the success message
+            alert(result.message || 'User deleted successfully.');
+            renderAdminPanel(); // Refresh the user list
         } catch (error) {
+            // This catch block will now handle network errors or if the response isn't JSON
+            console.error("Error deleting user:", error);
             alert(`Error: ${error.message}`);
-        } finally {
-            hideConfirmationModal();
+            renderAdminPanel(); // Re-render to ensure UI is up-to-date even on failure
         }
     }
 
