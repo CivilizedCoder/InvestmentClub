@@ -6,7 +6,7 @@ import yfinance as yf
 import pandas as pd
 import os
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 
@@ -106,7 +106,10 @@ def doc_to_dict_with_id(doc):
     # Convert Firestore timestamps to ISO format strings for JSON compatibility
     for key, value in data.items():
         if isinstance(value, datetime):
-            data[key] = value.isoformat() + 'Z'
+            # Ensure the datetime is aware and in UTC before formatting
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            data[key] = value.isoformat()
     return data
 
 def get_yfinance_quotes(tickers_list):
@@ -725,48 +728,53 @@ def update_holding_section():
 def get_presentations():
     try:
         presentations_stream = db.collection('presentations').stream()
-        presentations_unsorted = [doc_to_dict_with_id(doc) for doc in presentations_stream if doc is not None]
+        presentations_unsorted = [doc.to_dict() for doc in presentations_stream if doc.exists]
         
-        # Safely sort the list in Python, providing a default for 'created_at' if it's missing.
+        # Add document ID to each dictionary
+        for i, doc in enumerate(presentations_stream):
+            presentations_unsorted[i]['id'] = doc.id
+
+        # Safely sort the list in Python.
         presentations_list = sorted(
             presentations_unsorted, 
-            key=lambda p: p.get('created_at', '1970-01-01T00:00:00Z'), 
+            key=lambda p: p.get('created_at', datetime.min.replace(tzinfo=timezone.utc)), 
             reverse=True
         )
 
         processed_presentations = []
         for p_data in presentations_list:
-            # Safely get the voting end time.
-            voting_ends_at_str = p_data.get('votingEndsAt')
+            # Create a copy to modify for the JSON response
+            response_data = p_data.copy()
+
+            # Perform timezone-aware comparison
+            voting_ends_at = p_data.get('voting_ends_at')
             is_voting_open = False
-            if voting_ends_at_str:
-                try:
-                    # Compare timezone-aware datetimes.
-                    voting_ends_dt = datetime.fromisoformat(voting_ends_at_str.replace('Z', '+00:00'))
-                    is_voting_open = voting_ends_dt > datetime.now(voting_ends_dt.tzinfo)
-                except (ValueError, TypeError):
-                    # Handle cases where the date string is malformed.
-                    is_voting_open = False
+            if isinstance(voting_ends_at, datetime):
+                is_voting_open = voting_ends_at > datetime.now(timezone.utc)
             
-            p_data['isVotingOpen'] = is_voting_open
-            p_data['hasVoted'] = False
-            p_data['voteDirection'] = None
+            response_data['isVotingOpen'] = is_voting_open
+            response_data['hasVoted'] = False
+            response_data['voteDirection'] = None
+
+            # Convert datetime objects to ISO strings for JSON
+            for key, value in response_data.items():
+                if isinstance(value, datetime):
+                    response_data[key] = value.isoformat()
 
             if current_user.is_authenticated:
                 vote_ref = db.collection('presentations').document(p_data['id']).collection('votes').document(current_user.id).get()
                 if vote_ref.exists:
-                    p_data['hasVoted'] = True
-                    p_data['voteDirection'] = vote_ref.to_dict().get('vote_type')
+                    response_data['hasVoted'] = True
+                    response_data['voteDirection'] = vote_ref.to_dict().get('vote_type')
             
             if current_user.role != 'admin' and is_voting_open:
-                p_data.pop('votes_for', None)
-                p_data.pop('votes_against', None)
+                response_data.pop('votes_for', None)
+                response_data.pop('votes_against', None)
             
-            processed_presentations.append(p_data)
+            processed_presentations.append(response_data)
             
         return jsonify(processed_presentations)
     except Exception as e:
-        # Log the actual error for debugging.
         print(f"Error fetching presentations: {e}")
         return jsonify({"error": "Database error fetching presentations."}), 500
 
@@ -779,7 +787,7 @@ def add_presentation():
     if not all(k in data for k in ['title', 'url', 'ticker', 'action']):
         return jsonify({"error": "Missing required fields"}), 400
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     voting_ends = now + timedelta(hours=48)
     
     new_presentation_data = {
@@ -794,11 +802,10 @@ def add_presentation():
     }
     
     update_time, new_ref = db.collection('presentations').add(new_presentation_data)
-    new_presentation_data['id'] = new_ref.id
-    new_presentation_data['created_at'] = now.isoformat() + 'Z'
-    new_presentation_data['voting_ends_at'] = voting_ends.isoformat() + 'Z'
     
-    return jsonify(doc_to_dict_with_id(new_ref.get())), 201
+    # Fetch the newly created document to return it
+    new_doc = new_ref.get()
+    return jsonify(doc_to_dict_with_id(new_doc)), 201
 
 @app.route('/api/presentations/<string:presentation_id>/vote', methods=['POST'])
 @login_required
@@ -817,9 +824,9 @@ def vote_on_presentation(presentation_id):
     
     presentation_data = presentation_doc.to_dict()
     
-    # Robust check for voting end time
+    # Robust, timezone-aware check for voting end time
     voting_ends_at = presentation_data.get('voting_ends_at')
-    if not voting_ends_at or datetime.utcnow() > voting_ends_at:
+    if not isinstance(voting_ends_at, datetime) or datetime.now(timezone.utc) > voting_ends_at:
         return jsonify({"error": "Voting for this presentation has closed."}), 403
     
     vote_ref = presentation_ref.collection('votes').document(current_user.id)
