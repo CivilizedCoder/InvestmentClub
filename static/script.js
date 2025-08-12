@@ -380,6 +380,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- DATABASE & PORTFOLIO LOGIC ---
     async function addTransaction() {
+        if (!currentUser.loggedIn || currentUser.role === 'guest') {
+            alert("You must be a member to add items to the watchlist.");
+            return;
+        }
         if (!currentStockData) return;
         const isReal = document.getElementById('isRealCheckbox').checked;
         const transactionType = document.querySelector('input[name="transactionType"]:checked').value;
@@ -434,6 +438,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function confirmDeleteTransaction(transactionId) {
+        if (!currentUser.loggedIn || currentUser.role === 'guest') {
+            alert("You must be a member to delete items from the watchlist.");
+            return;
+        }
         if (transactionId === null) return;
         try {
             const response = await fetch(`/api/transaction/${transactionId}`, { method: 'DELETE' });
@@ -794,7 +802,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="chart-container" style="height: 400px;"><canvas id="stockChart"></canvas></div>
                 </div>
-                ${currentUser.loggedIn ? getAddToPortfolioHtml(info.symbol) : ''}
+                ${(currentUser.loggedIn && currentUser.role !== 'guest') ? getAddToPortfolioHtml(info.symbol) : ''}
                 <div class="space-y-4 mt-6">
                     ${createCollapsibleSection('Key Statistics', statsContent)}
                     ${createCollapsibleSection('Valuation Ratios', ratiosContent)}
@@ -983,8 +991,8 @@ document.addEventListener('DOMContentLoaded', () => {
             card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
             card.dataset.symbol = item.symbol;
     
-            // Show delete button only for logged-in users on watchlist items
-            const canDelete = currentUser.loggedIn && isWatchlist;
+            // Show delete button only for logged-in members on watchlist items
+            const canDelete = currentUser.loggedIn && currentUser.role !== 'guest' && isWatchlist;
             const deleteButtonHtml = canDelete
                 ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Remove from Watchlist"><i class="fas fa-times-circle"></i></button>` 
                 : '';
