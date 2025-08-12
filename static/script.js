@@ -187,35 +187,58 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        document.getElementById('adminContent')?.addEventListener('click', e => {
-            const roleSelect = e.target.closest('.role-select');
-            if (roleSelect) {
-                const userId = roleSelect.dataset.userId;
-                const newRole = roleSelect.value;
-                updateUserRole(userId, newRole);
-            }
-
-            const deleteUserBtn = e.target.closest('.delete-user-btn');
-            if (deleteUserBtn) {
-                const userId = deleteUserBtn.dataset.userId;
-                const username = deleteUserBtn.dataset.username;
-                promptForConfirmation(
-                    'Delete User',
-                    `Are you sure you want to delete the user "${username}"? This action is permanent.`,
-                    () => confirmDeleteUser(userId)
-                );
-            }
-
-            const setPasswordBtn = e.target.closest('.set-password-btn');
-            if (setPasswordBtn) {
-                const userId = setPasswordBtn.dataset.userId;
-                const username = setPasswordBtn.dataset.username;
-                const newPassword = prompt(`Enter new password for ${username}:`);
-                if (newPassword) {
-                    setUserPassword(userId, newPassword);
+        // *** FIX: Use 'change' for select and 'click' for buttons ***
+        const adminContent = document.getElementById('adminContent');
+        if (adminContent) {
+            // Listener for role changes
+            adminContent.addEventListener('change', e => {
+                const roleSelect = e.target.closest('.role-select');
+                if (roleSelect) {
+                    const userId = roleSelect.dataset.userId;
+                    const newRole = roleSelect.value;
+                    const username = roleSelect.selectedOptions[0].parentElement.dataset.username;
+                    promptForConfirmation(
+                        'Change User Role',
+                        `Are you sure you want to change ${username}'s role to "${newRole}"?`,
+                        () => confirmUpdateUserRole(userId, newRole)
+                    );
                 }
-            }
-        });
+            });
+
+            // Listener for button clicks
+            adminContent.addEventListener('click', e => {
+                const deleteUserBtn = e.target.closest('.delete-user-btn');
+                if (deleteUserBtn) {
+                    const userId = deleteUserBtn.dataset.userId;
+                    const username = deleteUserBtn.dataset.username;
+                    promptForConfirmation(
+                        'Delete User',
+                        `Are you sure you want to delete the user "${username}"? This action is permanent.`,
+                        () => confirmDeleteUser(userId)
+                    );
+                }
+
+                const setPasswordBtn = e.target.closest('.set-password-btn');
+                if (setPasswordBtn) {
+                    const userId = setPasswordBtn.dataset.userId;
+                    const username = setPasswordBtn.dataset.username;
+                    const newPassword = prompt(`Enter new password for ${username}:`);
+                    if (newPassword) {
+                        setUserPassword(userId, newPassword);
+                    }
+                }
+
+                const renameUserBtn = e.target.closest('.rename-user-btn');
+                if (renameUserBtn) {
+                    const userId = renameUserBtn.dataset.userId;
+                    const currentUsername = renameUserBtn.dataset.username;
+                    const newUsername = prompt(`Enter new username for ${currentUsername}:`, currentUsername);
+                    if (newUsername && newUsername.trim() && newUsername !== currentUsername) {
+                        updateUsername(userId, newUsername.trim());
+                    }
+                }
+            });
+        }
         
         const addCardButtons = document.querySelectorAll('#addAboutCardBtn, #addInternshipsCardBtn');
         addCardButtons.forEach(btn => {
@@ -1297,11 +1320,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td class="p-3">${user.id}</td>
                     <td class="p-3 font-semibold">${user.username} ${isCurrentUser ? '(You)' : ''}</td>
                     <td class="p-3">
-                        <select class="form-input role-select" data-user-id="${user.id}" ${isCurrentUser ? 'disabled' : ''}>
+                        <select class="form-input role-select" data-user-id="${user.id}" data-username="${user.username}" ${isCurrentUser ? 'disabled' : ''}>
                             ${roleOptions}
                         </select>
                     </td>
                     <td class="p-3 text-center space-x-4">
+                        <button class="rename-user-btn" data-user-id="${user.id}" data-username="${user.username}" ${isCurrentUser ? 'disabled' : ''} title="Rename User">
+                            <i class="fas fa-edit text-cyan-400"></i>
+                        </button>
                         <button class="set-password-btn" data-user-id="${user.id}" data-username="${user.username}" ${isCurrentUser ? 'disabled' : ''} title="Set Password">
                             <i class="fas fa-key text-yellow-500"></i>
                         </button>
@@ -1317,22 +1343,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function updateUserRole(userId, newRole) {
+    async function confirmUpdateUserRole(userId, newRole) {
         try {
             const response = await fetch(`/api/users/${userId}/role`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ role: newRole })
             });
+            const result = await response.json();
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Failed to update role.');
+                throw new Error(result.error || 'Failed to update role.');
             }
-            alert('User role updated successfully.');
-            renderAdminPanel();
+            alert(result.message);
         } catch (error) {
             alert(`Error: ${error.message}`);
-            renderAdminPanel();
+        } finally {
+            hideConfirmationModal();
+            renderAdminPanel(); // Re-render to reflect changes or revert optimistic UI on failure
+        }
+    }
+    
+    async function updateUsername(userId, newUsername) {
+        try {
+            const response = await fetch(`/api/users/${userId}/username`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: newUsername })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to update username.');
+            }
+            alert(result.message);
+            renderAdminPanel(); // Re-render to show the new name
+        } catch (error) {
+            alert(`Error: ${error.message}`);
         }
     }
 

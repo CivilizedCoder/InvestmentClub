@@ -276,6 +276,43 @@ def update_user_role(user_id):
     updated_user_doc = user_ref.get()
     return jsonify({"message": "User role updated successfully.", "user": doc_to_dict_with_id(updated_user_doc)})
 
+@app.route('/api/users/<string:user_id>/username', methods=['POST'])
+@login_required
+def update_user_username(user_id):
+    """Allows an admin to update a user's username."""
+    # Ensure the current user is an admin
+    if current_user.role != 'admin':
+        return jsonify({"error": "Forbidden"}), 403
+
+    # Check if the user exists
+    user_ref = db.collection('users').document(user_id)
+    if not user_ref.get().exists:
+        return jsonify({"error": "User not found"}), 404
+
+    data = request.get_json()
+    new_username = data.get('username')
+
+    # Validate the new username
+    if not new_username or len(new_username) < 1:
+        return jsonify({"error": "Username cannot be empty."}), 400
+
+    # Check if the new username is already taken by another user
+    users_ref = db.collection('users').where('username', '==', new_username).limit(1).stream()
+    existing_user_doc = next(users_ref, None)
+    
+    if existing_user_doc and existing_user_doc.id != user_id:
+        return jsonify({"error": f"Username '{new_username}' is already taken."}), 409 # 409 Conflict
+
+    # Update the username
+    user_ref.update({'username': new_username})
+    
+    updated_user_doc = user_ref.get()
+    return jsonify({
+        "message": f"Username for user {user_id} updated successfully.",
+        "user": doc_to_dict_with_id(updated_user_doc)
+    })
+
+
 @app.route('/api/users/<string:user_id>/set-password', methods=['POST'])
 @login_required
 def set_user_password(user_id):
