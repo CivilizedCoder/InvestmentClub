@@ -728,11 +728,14 @@ def update_holding_section():
 def get_presentations():
     try:
         presentations_stream = db.collection('presentations').stream()
-        presentations_unsorted = [doc.to_dict() for doc in presentations_stream if doc.exists]
         
-        # Add document ID to each dictionary
-        for i, doc in enumerate(presentations_stream):
-            presentations_unsorted[i]['id'] = doc.id
+        # Correctly build the list of presentations with their IDs
+        presentations_unsorted = []
+        for doc in presentations_stream:
+            if doc.exists:
+                p_data = doc.to_dict()
+                p_data['id'] = doc.id
+                presentations_unsorted.append(p_data)
 
         # Safely sort the list in Python.
         presentations_list = sorted(
@@ -762,6 +765,7 @@ def get_presentations():
                     response_data[key] = value.isoformat()
 
             if current_user.is_authenticated:
+                # The 'id' key is now guaranteed to exist here
                 vote_ref = db.collection('presentations').document(p_data['id']).collection('votes').document(current_user.id).get()
                 if vote_ref.exists:
                     response_data['hasVoted'] = True
