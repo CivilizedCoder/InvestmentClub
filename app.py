@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, jsonify, render_template, request, redirect, url_for
+from flask import Flask, jsonify, render_template, request, redirect, url_for, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
 import yfinance as yf
@@ -9,22 +9,18 @@ import math
 from datetime import datetime, timedelta, timezone
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
+import requests
 
 # --- INITIALIZATION ---
 # Initialize Firebase Admin SDK
-# The GOOGLE_APPLICATION_CREDENTIALS environment variable should be set with the path to your service account key file.
-# On Render, you can set this as a secret file.
 try:
-    cred = credentials.ApplicationDefault()
-    firebase_admin.initialize_app(cred)
-except Exception as e:
-    print(f"Warning: Firebase Admin SDK not initialized. Missing credentials? Error: {e}")
-    # Fallback for local development if you store key in a specific path
     if os.path.exists('serviceAccountKey.json'):
         cred = credentials.Certificate('serviceAccountKey.json')
-        firebase_admin.initialize_app(cred)
     else:
-        print("CRITICAL: serviceAccountKey.json not found and GOOGLE_APPLICATION_CREDENTIALS not set.")
+        cred = credentials.ApplicationDefault()
+    firebase_admin.initialize_app(cred)
+except Exception as e:
+    print(f"CRITICAL: Firebase Admin SDK could not be initialized. Error: {e}")
 
 
 db = firestore.client()
@@ -410,7 +406,24 @@ def delete_user(user_id):
 # --- HTML & API ROUTES ---
 @app.route('/')
 def index():
+    # Download the new logo if it doesn't exist
+    logo_path = os.path.join(app.static_folder, 'InvestmentClubLogo.png')
+    if not os.path.exists(logo_path):
+        try:
+            logo_url = "https://i.imgur.com/KDMoH0s.png"
+            response = requests.get(logo_url, stream=True)
+            if response.status_code == 200:
+                with open(logo_path, 'wb') as f:
+                    for chunk in response.iter_content(1024):
+                        f.write(chunk)
+                print("New logo downloaded successfully.")
+            else:
+                print(f"Failed to download new logo. Status code: {response.status_code}")
+        except Exception as e:
+            print(f"Error downloading new logo: {e}")
+            
     return render_template('index.html')
+
 
 @app.route('/api/status')
 def get_status():
@@ -449,10 +462,8 @@ def get_homepage_data():
         else:
             # Guests see only the watchlist
             title = "Club Watchlist"
-            # FIX: Remove order_by to prevent index error. Sorting is done in Python.
             watchlist_stream = db.collection('holdings').where('isReal', '==', False).stream()
             items_to_display_unsorted = [doc_to_dict_with_id(doc) for doc in watchlist_stream]
-            # Sort the results in the application code instead of the query
             items_to_display = sorted(items_to_display_unsorted, key=lambda x: x.get('date', ''), reverse=True)
 
         # Fetch quotes for all items
@@ -474,8 +485,6 @@ def get_homepage_data():
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-# ... (Keep all yfinance routes: /api/quotes, /api/stock/<ticker_symbol>/history, /api/stock/<ticker_symbol>)
-# These routes do not interact with the database and can remain unchanged.
 @app.route('/api/quotes', methods=['POST'])
 def get_quotes():
     try:
@@ -534,8 +543,20 @@ def get_stock_data(ticker_symbol):
         info = stock.info
         
         if not info or 'regularMarketPrice' not in info or info.get('regularMarketPrice') is None:
+            # If ticker is invalid, don't save to history and return error
             return jsonify({"error": "Invalid ticker or data not available"}), 404
-        
+
+        # Add search to history for logged-in users
+        if current_user.is_authenticated:
+            try:
+                search_ref = db.collection('users').document(current_user.id).collection('recent_searches').document(ticker_symbol.upper())
+                search_ref.set({
+                    'searched_at': firestore.SERVER_TIMESTAMP
+                })
+            except Exception as e:
+                # Log the error but don't fail the main request
+                print(f"Could not save search history for user {current_user.id}: {e}")
+
         hist = stock.history(period="max").reset_index()
         hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
         
@@ -608,8 +629,23 @@ def get_stock_data(ticker_symbol):
         print(f"Error fetching data for {ticker_symbol}: {e}")
         return jsonify({"error": f"An error occurred while fetching data for {ticker_symbol}. See server logs."}), 500
 
-# --- DATABASE API ENDPOINTS ---
+# --- NEW ROUTE FOR SEARCH HISTORY ---
+@app.route('/api/user/search-history')
+@login_required
+def get_search_history():
+    try:
+        searches_ref = db.collection('users').document(current_user.id).collection('recent_searches')
+        # Order by the timestamp and get the most recent 10
+        query = searches_ref.order_by('searched_at', direction=firestore.Query.DESCENDING).limit(10)
+        docs = query.stream()
+        
+        search_history = [doc.id for doc in docs]
+        return jsonify(search_history)
+    except Exception as e:
+        print(f"Error fetching search history for user {current_user.id}: {e}")
+        return jsonify([]), 500
 
+# --- DATABASE API ENDPOINTS ---
 @app.route('/api/portfolio', methods=['GET'])
 @login_required
 def get_transactions():
@@ -682,15 +718,11 @@ def delete_transaction(transaction_id):
     transaction_data = transaction_doc.to_dict()
     is_real_transaction = transaction_data.get('isReal', False)
 
-    # All deletions require a logged-in user.
     if not current_user.is_authenticated:
         return jsonify({"error": "Forbidden: You must be logged in to delete items."}), 403
 
-    # Real transactions can only be deleted by admins.
     if is_real_transaction and current_user.role != 'admin':
         return jsonify({"error": "Forbidden: Only admins can delete real transactions."}), 403
-    
-    # Watchlist items can be deleted by any logged-in user (member or admin).
     
     transaction_ref.delete()
     return jsonify({"message": "Transaction deleted successfully"})
@@ -729,7 +761,6 @@ def get_presentations():
     try:
         presentations_stream = db.collection('presentations').stream()
         
-        # Correctly build the list of presentations with their IDs
         presentations_unsorted = []
         for doc in presentations_stream:
             if doc.exists:
@@ -737,7 +768,6 @@ def get_presentations():
                 p_data['id'] = doc.id
                 presentations_unsorted.append(p_data)
 
-        # Safely sort the list in Python.
         presentations_list = sorted(
             presentations_unsorted, 
             key=lambda p: p.get('created_at', datetime.min.replace(tzinfo=timezone.utc)), 
@@ -746,10 +776,8 @@ def get_presentations():
 
         processed_presentations = []
         for p_data in presentations_list:
-            # Create a copy to modify for the JSON response
             response_data = p_data.copy()
 
-            # Perform timezone-aware comparison
             voting_ends_at = p_data.get('voting_ends_at')
             is_voting_open = False
             if isinstance(voting_ends_at, datetime):
@@ -759,13 +787,11 @@ def get_presentations():
             response_data['hasVoted'] = False
             response_data['voteDirection'] = None
 
-            # Convert datetime objects to ISO strings for JSON
             for key, value in response_data.items():
                 if isinstance(value, datetime):
                     response_data[key] = value.isoformat()
 
             if current_user.is_authenticated:
-                # The 'id' key is now guaranteed to exist here
                 vote_ref = db.collection('presentations').document(p_data['id']).collection('votes').document(current_user.id).get()
                 if vote_ref.exists:
                     response_data['hasVoted'] = True
@@ -799,6 +825,7 @@ def add_presentation():
         'url': data['url'],
         'ticker': data['ticker'].upper(),
         'action': data['action'],
+        'created_by': current_user.id,
         'created_at': now,
         'voting_ends_at': voting_ends,
         'votes_for': 0,
@@ -807,7 +834,6 @@ def add_presentation():
     
     update_time, new_ref = db.collection('presentations').add(new_presentation_data)
     
-    # Fetch the newly created document to return it
     new_doc = new_ref.get()
     return jsonify(doc_to_dict_with_id(new_doc)), 201
 
@@ -818,7 +844,7 @@ def vote_on_presentation(presentation_id):
         return jsonify({"error": "Guests cannot vote."}), 403
         
     data = request.get_json()
-    vote_type = data.get('voteType')
+    new_vote_type = data.get('voteType')
     
     presentation_ref = db.collection('presentations').document(presentation_id)
     presentation_doc = presentation_ref.get()
@@ -828,43 +854,56 @@ def vote_on_presentation(presentation_id):
     
     presentation_data = presentation_doc.to_dict()
     
-    # Robust, timezone-aware check for voting end time
     voting_ends_at = presentation_data.get('voting_ends_at')
     if not isinstance(voting_ends_at, datetime) or datetime.now(timezone.utc) > voting_ends_at:
         return jsonify({"error": "Voting for this presentation has closed."}), 403
     
-    vote_ref = presentation_ref.collection('votes').document(current_user.id)
-    if vote_ref.get().exists:
-        return jsonify({"error": "You have already voted on this presentation."}), 409
-
-    if vote_type not in ['for', 'against']:
+    if new_vote_type not in ['for', 'against']:
         return jsonify({"error": "Invalid vote type"}), 400
 
-    # Use a transaction to ensure atomicity
+    vote_ref = presentation_ref.collection('votes').document(current_user.id)
+    existing_vote_doc = vote_ref.get()
+
     @firestore.transactional
     def update_in_transaction(transaction, pres_ref, vt_ref):
         pres_snapshot = pres_ref.get(transaction=transaction)
+        current_votes_for = pres_snapshot.get('votes_for')
+        current_votes_against = pres_snapshot.get('votes_against')
+
+        if existing_vote_doc.exists:
+            old_vote_type = existing_vote_doc.to_dict().get('vote_type')
+            if old_vote_type == new_vote_type:
+                return # No change needed if clicking the same vote
+            
+            # Decrement the old vote count
+            if old_vote_type == 'for':
+                current_votes_for -= 1
+            elif old_vote_type == 'against':
+                current_votes_against -= 1
         
-        # Add the user's vote
+        # Update the user's vote document (set for new, overwrite for change)
         transaction.set(vt_ref, {
             'user_id': current_user.id,
-            'vote_type': vote_type
+            'username': current_user.username,
+            'vote_type': new_vote_type,
+            'voted_at': firestore.SERVER_TIMESTAMP
         })
         
-        # Update the aggregate count
-        if vote_type == 'for':
-            transaction.update(pres_ref, {
-                'votes_for': pres_snapshot.get('votes_for') + 1
-            })
-        elif vote_type == 'against':
-            transaction.update(pres_ref, {
-                'votes_against': pres_snapshot.get('votes_against') + 1
-            })
+        # Increment the new vote count
+        if new_vote_type == 'for':
+            current_votes_for += 1
+        elif new_vote_type == 'against':
+            current_votes_against += 1
+        
+        # Update the aggregate counts on the presentation
+        transaction.update(pres_ref, {
+            'votes_for': current_votes_for,
+            'votes_against': current_votes_against
+        })
 
     transaction = db.transaction()
     update_in_transaction(transaction, presentation_ref, vote_ref)
     
-    # Re-fetch the presentation data to return the updated state
     updated_presentation_doc = presentation_ref.get()
     return jsonify(doc_to_dict_with_id(updated_presentation_doc))
 
@@ -893,4 +932,5 @@ def update_page_content(page_name):
     return jsonify({'message': f'{page_name} content updated successfully.'})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=os.environ.get('PORT', 5001))
+    port = int(os.environ.get('PORT', 5001))
+    app.run(debug=True, host='0.0.0.0', port=port)

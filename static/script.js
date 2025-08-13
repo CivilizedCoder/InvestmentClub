@@ -5,8 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentStockData = null;
     let transactions = []; // Holds all transaction data for logged-in members
     let homepageData = { title: 'Loading...', items: [] }; // Holds data for the homepage view
-    let recentSearches = [];
-    const MAX_RECENT_SEARCHES = 5;
+    let recentSearches = []; // Will be populated from the server
     let actionToConfirm = null; // A function to execute when modal is confirmed
     let sectionCollapseStates = {}; // To store open/closed state of portfolio sections
 
@@ -17,6 +16,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initialize() {
         initializeEventListeners();
         await fetchUserStatus(); 
+        
+        // Fetch recent searches if user is logged in
+        if (currentUser.loggedIn) {
+            await fetchRecentSearches();
+        }
         
         // Fetch data required for the initial view (homepage)
         await fetchHomepageData();
@@ -61,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('Failed to fetch homepage data');
             homepageData = await response.json();
             
-            // If the active tab is home, re-render it
             const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
             if (activeTab === 'home') {
                 renderPortfolioSummary();
@@ -76,12 +79,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchTransactions() {
-        // This function is for member-only tabs that need the full transaction list
         try {
             const response = await fetch('/api/portfolio');
             if (!response.ok) {
                 if (response.status === 401) {
-                    console.log("User not logged in. Cannot fetch transactions.");
                     transactions = [];
                     return;
                 }
@@ -94,10 +95,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function fetchRecentSearches() {
+        if (!currentUser.loggedIn) {
+            recentSearches = [];
+            return;
+        }
+        try {
+            const response = await fetch('/api/user/search-history');
+            if (response.ok) {
+                recentSearches = await response.json();
+            } else {
+                console.error("Failed to fetch recent searches.");
+                recentSearches = [];
+            }
+        } catch (error) {
+            console.error("Error fetching recent searches:", error);
+            recentSearches = [];
+        }
+    }
+
     // --- EVENT LISTENERS ---
     function initializeEventListeners() {
         document.getElementById('fetchBtn')?.addEventListener('click', executeSearch);
-        document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && executeSearch);
+        document.getElementById('tickerInput')?.addEventListener('keypress', e => e.key === 'Enter' && executeSearch());
         document.getElementById('presentationForm')?.addEventListener('submit', handlePresentationSubmit);
 
         document.querySelectorAll('.nav-link').forEach(link => {
@@ -118,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const deleteButton = e.target.closest('.delete-on-card-btn, .delete-in-table-btn');
             if (deleteButton) {
                 e.stopPropagation();
-                const transactionId = deleteButton.dataset.id; // Firestore IDs are strings
+                const transactionId = deleteButton.dataset.id;
                 promptForConfirmation(
                     'Delete Item',
                     'Are you sure you want to delete this item? This action cannot be undone.',
@@ -152,14 +172,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Combined handler for all collapsible headers
             const collapsibleHeader = e.target.closest('.collapsible-header, .portfolio-section-header');
             if (collapsibleHeader) {
                 const content = collapsibleHeader.nextElementSibling;
                 const isOpen = collapsibleHeader.classList.toggle('open');
                 if (content) content.classList.toggle('open');
             
-                // If it's a portfolio section, also update the state tracker
                 const portfolioSection = collapsibleHeader.closest('.portfolio-section');
                 if (portfolioSection) {
                     const sectionName = portfolioSection.dataset.sectionName;
@@ -187,10 +205,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // *** FIX: Use 'change' for select and 'click' for buttons ***
         const adminContent = document.getElementById('adminContent');
         if (adminContent) {
-            // Listener for role changes
             adminContent.addEventListener('change', e => {
                 const roleSelect = e.target.closest('.role-select');
                 if (roleSelect) {
@@ -205,7 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Listener for button clicks
             adminContent.addEventListener('click', e => {
                 const deleteUserBtn = e.target.closest('.delete-user-btn');
                 if (deleteUserBtn) {
@@ -329,10 +344,8 @@ document.addEventListener('DOMContentLoaded', () => {
             targetContent.classList.add('active-content');
         }
         
-        // Lazy load data needed for specific tabs
         const isMember = currentUser.loggedIn && currentUser.role !== 'guest';
         if (isMember && (tab === 'transactions' || tab === 'portfolio') && transactions.length === 0) {
-            // If member navigates to a protected tab and data isn't loaded, load it.
             await fetchTransactions();
         }
 
@@ -358,11 +371,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
         if (!ticker) return;
 
-        if (!recentSearches.includes(ticker)) {
-            recentSearches.unshift(ticker);
-            if (recentSearches.length > MAX_RECENT_SEARCHES) recentSearches.pop();
-        }
-
         activateTab('search');
         fetchStockData(ticker);
     }
@@ -371,8 +379,11 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSearchTab(null, null, true); 
         fetch(`/api/stock/${ticker}`)
             .then(response => response.ok ? response.json() : response.json().then(err => { throw new Error(err.error) }))
-            .then(data => {
+            .then(async (data) => {
                 currentStockData = data;
+                if (currentUser.loggedIn) {
+                    await fetchRecentSearches();
+                }
                 renderSearchTab(data);
             })
             .catch(error => renderSearchTab(null, error.message));
@@ -428,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
         if (response.ok) {
             alert(`${newTransaction.symbol} transaction has been added.`);
-            fetchHomepageData(); // Refresh homepage to show new item
+            fetchHomepageData();
             const activeTab = document.querySelector('.nav-link.active')?.dataset.tab;
             if (activeTab) activateTab(activeTab);
         } else {
@@ -446,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`/api/transaction/${transactionId}`, { method: 'DELETE' });
             if (response.ok) {
-                fetchHomepageData(); // Refresh homepage to remove item
+                fetchHomepageData();
                 const currentTab = document.querySelector('.nav-link.active')?.dataset.tab;
                 if (currentTab) activateTab(currentTab);
             } else {
@@ -529,7 +540,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (section) {
                 const header = section.querySelector('.portfolio-section-header');
                 const content = header?.nextElementSibling;
-                // Apply the saved state only if it was 'open'
                 if (sectionCollapseStates[sectionName] && header && content) {
                     header.classList.add('open');
                     content.classList.add('open');
@@ -814,10 +824,11 @@ document.addEventListener('DOMContentLoaded', () => {
             contentHtml += `<div class="card"><p class="text-gray-500 text-center">Search for a stock to see details.</p></div>`;
         }
     
+        const noSearchesMessage = currentUser.loggedIn ? 'No recent searches.' : 'Log in to see search history.';
         contentHtml += `</div><div class="lg:col-span-1"><div class="card">
             <h3 class="text-xl font-bold mb-4">Recent Searches</h3>
             <ul id="recentSearchesList" class="space-y-2">
-                ${recentSearches.length > 0 ? recentSearches.map(t => `<li><a href="#" class="recent-search-link text-cyan-400 hover:underline" data-ticker="${t}">${t}</a></li>`).join('') : `<li class="text-gray-500">No recent searches.</li>`}
+                ${recentSearches.length > 0 ? recentSearches.map(t => `<li><a href="#" class="recent-search-link text-cyan-400 hover:underline" data-ticker="${t}">${t}</a></li>`).join('') : `<li class="text-gray-500">${noSearchesMessage}</li>`}
             </ul>
         </div></div></div>`;
     
@@ -974,7 +985,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
     
-        summaryList.innerHTML = ''; // Clear previous content
+        summaryList.innerHTML = ''; 
     
         itemsToDisplay.forEach(item => {
             const quote = item.quote;
@@ -991,7 +1002,6 @@ document.addEventListener('DOMContentLoaded', () => {
             card.className = `summary-card ${isWatchlist ? 'watchlist-card' : ''}`;
             card.dataset.symbol = item.symbol;
     
-            // Show delete button only for logged-in members on watchlist items
             const canDelete = currentUser.loggedIn && currentUser.role !== 'guest' && isWatchlist;
             const deleteButtonHtml = canDelete
                 ? `<button class="delete-on-card-btn" data-id="${item.id}" title="Remove from Watchlist"><i class="fas fa-times-circle"></i></button>` 
@@ -1095,20 +1105,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 let voteButtons = '';
                 const canVote = p.isVotingOpen && currentUser.loggedIn && currentUser.role !== 'guest';
-                if (canVote && !p.hasVoted) {
+                if (canVote) {
+                    const forVoted = p.hasVoted && p.voteDirection === 'for' ? 'voted' : '';
+                    const againstVoted = p.hasVoted && p.voteDirection === 'against' ? 'voted' : '';
                     voteButtons = `
-                        <button class="vote-btn" data-id="${p.id}" data-type="for"><i class="fas fa-thumbs-up text-green-500"></i></button>
-                        <button class="vote-btn" data-id="${p.id}" data-type="against"><i class="fas fa-thumbs-down text-red-500"></i></button>
-                    `;
-                } else if (canVote && p.hasVoted) {
-                    const forVoted = p.voteDirection === 'for' ? 'voted' : '';
-                    const againstVoted = p.voteDirection === 'against' ? 'voted' : '';
-                    voteButtons = `
-                        <button class="vote-btn ${forVoted}" disabled><i class="fas fa-thumbs-up text-green-500"></i></button>
-                        <button class="vote-btn ${againstVoted}" disabled><i class="fas fa-thumbs-down text-red-500"></i></button>
+                        <button class="vote-btn ${forVoted}" data-id="${p.id}" data-type="for" data-has-voted="${p.hasVoted}"><i class="fas fa-thumbs-up text-green-500"></i></button>
+                        <button class="vote-btn ${againstVoted}" data-id="${p.id}" data-type="against" data-has-voted="${p.hasVoted}"><i class="fas fa-thumbs-down text-red-500"></i></button>
                     `;
                 }
-
 
                 const timeRemaining = formatTimeRemaining(p.voting_ends_at);
                 const timeStatusColor = p.isVotingOpen ? 'text-yellow-400' : 'text-gray-400';
@@ -1129,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 listEl.appendChild(card);
             });
-            listEl.querySelectorAll('.vote-btn:not([disabled])').forEach(btn => btn.addEventListener('click', handleVote));
+            listEl.querySelectorAll('.vote-btn').forEach(btn => btn.addEventListener('click', handleVote));
         } catch (error) {
             listEl.innerHTML = '<p class="card text-red-400">Could not load presentations.</p>';
         }
@@ -1158,7 +1162,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const quotes = await fetchQuotesForHoldings(currentPositions);
         const sections = groupHoldingsBySection(currentPositions, quotes);
         
-        // --- Calculate and Render KPIs ---
         const totalPortfolioValue = Object.values(sections).reduce((sum, sec) => sum + sec.currentValue, 0);
         const totalInvestedCapital = Object.values(sections).reduce((sum, sec) => sum + sec.totalCost, 0);
         const totalGainLoss = totalPortfolioValue - totalInvestedCapital;
@@ -1185,7 +1188,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
         
-        // --- Render Sections ---
         if (newSectionName && !sections[newSectionName]) {
             sections[newSectionName] = { holdings: [], totalCost: 0, currentValue: 0 };
         }
@@ -1367,7 +1369,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Error: ${error.message}`);
         } finally {
             hideConfirmationModal();
-            renderAdminPanel(); // Re-render to reflect changes or revert optimistic UI on failure
+            renderAdminPanel();
         }
     }
     
@@ -1383,7 +1385,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(result.error || 'Failed to update username.');
             }
             alert(result.message);
-            renderAdminPanel(); // Re-render to show the new name
+            renderAdminPanel();
         } catch (error) {
             alert(`Error: ${error.message}`);
         }
@@ -1407,24 +1409,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function confirmDeleteUser(userId) {
-        hideConfirmationModal(); // Hide modal immediately
+        hideConfirmationModal();
         try {
             const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
-            const result = await response.json(); // Always expect JSON now
+            const result = await response.json();
     
             if (!response.ok) {
-                // If response is not OK, the 'result' object will contain the error message
                 throw new Error(result.error || 'An unknown error occurred.');
             }
     
-            // If response is OK, the 'result' object will contain the success message
             alert(result.message || 'User deleted successfully.');
-            renderAdminPanel(); // Refresh the user list
+            renderAdminPanel();
         } catch (error) {
-            // This catch block will now handle network errors or if the response isn't JSON
             console.error("Error deleting user:", error);
             alert(`Error: ${error.message}`);
-            renderAdminPanel(); // Re-render to ensure UI is up-to-date even on failure
+            renderAdminPanel();
         }
     }
 
@@ -1513,8 +1512,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getTimeRemaining(endtime) {
-        // FIX: Directly create a Date object from the ISO string.
-        // This is more reliable than Date.parse() across browsers.
         const total = new Date(endtime) - new Date();
         return {
             total,
@@ -1548,12 +1545,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const button = e.currentTarget;
         const id = button.dataset.id;
         const voteType = button.dataset.type;
-        const response = await fetch(`/api/presentations/${id}/vote`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voteType }) });
-        if (response.ok) {
-            renderPresentations();
+        const hasVoted = button.dataset.hasVoted === 'true';
+
+        if (hasVoted) {
+            promptForConfirmation(
+                'Change Vote',
+                'Are you sure you want to change your vote?',
+                () => confirmVote(id, voteType)
+            );
         } else {
-            const err = await response.json();
-            alert(`Failed to record vote: ${err.error}`);
+            await confirmVote(id, voteType);
+        }
+    }
+
+    async function confirmVote(id, voteType) {
+        try {
+            const response = await fetch(`/api/presentations/${id}/vote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ voteType })
+            });
+            if (response.ok) {
+                renderPresentations(); 
+            } else {
+                const err = await response.json();
+                alert(`Failed to record vote: ${err.error}`);
+            }
+        } finally {
+            hideConfirmationModal();
         }
     }
 
