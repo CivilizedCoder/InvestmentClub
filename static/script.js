@@ -846,7 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelector('.timeframe-btn[data-chart="stock"][data-range="1Y"]')?.classList.add('active');
             updateChartAndStats(stockChart, data.historical, '1Y', 'stockReturnStats', 'Close');
 
-            if (currentUser.loggedIn) {
+            if (currentUser.loggedIn && currentUser.role !== 'guest') {
                 const isRealCheckbox = document.getElementById('isRealCheckbox');
                 const realPurchaseInputs = document.getElementById('realPurchaseInputs');
                 const addToPortfolioBtn = document.getElementById('addToPortfolioBtn');
