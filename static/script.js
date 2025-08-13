@@ -17,10 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeEventListeners();
         await fetchUserStatus(); 
         
-        // Fetch recent searches if user is logged in
-        if (currentUser.loggedIn) {
-            await fetchRecentSearches();
-        }
+        // Fetch recent searches for all users
+        await fetchRecentSearches();
         
         // Fetch data required for the initial view (homepage)
         await fetchHomepageData();
@@ -96,12 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchRecentSearches() {
-        if (!currentUser.loggedIn) {
-            recentSearches = [];
-            return;
-        }
         try {
-            const response = await fetch('/api/user/search-history');
+            const response = await fetch('/api/search-history');
             if (response.ok) {
                 recentSearches = await response.json();
             } else {
@@ -381,9 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(response => response.ok ? response.json() : response.json().then(err => { throw new Error(err.error) }))
             .then(async (data) => {
                 currentStockData = data;
-                if (currentUser.loggedIn) {
-                    await fetchRecentSearches();
-                }
+                await fetchRecentSearches(); // Always fetch after a search
                 renderSearchTab(data);
             })
             .catch(error => renderSearchTab(null, error.message));
@@ -824,7 +816,7 @@ document.addEventListener('DOMContentLoaded', () => {
             contentHtml += `<div class="card"><p class="text-gray-500 text-center">Search for a stock to see details.</p></div>`;
         }
     
-        const noSearchesMessage = currentUser.loggedIn ? 'No recent searches.' : 'Log in to see search history.';
+        const noSearchesMessage = 'No recent searches.';
         contentHtml += `</div><div class="lg:col-span-1"><div class="card">
             <h3 class="text-xl font-bold mb-4">Recent Searches</h3>
             <ul id="recentSearchesList" class="space-y-2">

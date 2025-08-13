@@ -546,16 +546,15 @@ def get_stock_data(ticker_symbol):
             # If ticker is invalid, don't save to history and return error
             return jsonify({"error": "Invalid ticker or data not available"}), 404
 
-        # Add search to history for logged-in users
-        if current_user.is_authenticated:
-            try:
-                search_ref = db.collection('users').document(current_user.id).collection('recent_searches').document(ticker_symbol.upper())
-                search_ref.set({
-                    'searched_at': firestore.SERVER_TIMESTAMP
-                })
-            except Exception as e:
-                # Log the error but don't fail the main request
-                print(f"Could not save search history for user {current_user.id}: {e}")
+        # Add search to a global history for all users
+        try:
+            search_ref = db.collection('global_recent_searches').document(ticker_symbol.upper())
+            search_ref.set({
+                'searched_at': firestore.SERVER_TIMESTAMP
+            })
+        except Exception as e:
+            # Log the error but don't fail the main request
+            print(f"Could not save to global search history: {e}")
 
         hist = stock.history(period="max").reset_index()
         hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
@@ -629,12 +628,11 @@ def get_stock_data(ticker_symbol):
         print(f"Error fetching data for {ticker_symbol}: {e}")
         return jsonify({"error": f"An error occurred while fetching data for {ticker_symbol}. See server logs."}), 500
 
-# --- NEW ROUTE FOR SEARCH HISTORY ---
-@app.route('/api/user/search-history')
-@login_required
+# --- ROUTE FOR GLOBAL SEARCH HISTORY ---
+@app.route('/api/search-history')
 def get_search_history():
     try:
-        searches_ref = db.collection('users').document(current_user.id).collection('recent_searches')
+        searches_ref = db.collection('global_recent_searches')
         # Order by the timestamp and get the most recent 10
         query = searches_ref.order_by('searched_at', direction=firestore.Query.DESCENDING).limit(10)
         docs = query.stream()
@@ -642,7 +640,7 @@ def get_search_history():
         search_history = [doc.id for doc in docs]
         return jsonify(search_history)
     except Exception as e:
-        print(f"Error fetching search history for user {current_user.id}: {e}")
+        print(f"Error fetching global search history: {e}")
         return jsonify([]), 500
 
 # --- DATABASE API ENDPOINTS ---
@@ -708,6 +706,7 @@ def add_transaction():
     return jsonify(new_transaction_data), 201
 
 @app.route('/api/transaction/<string:transaction_id>', methods=['DELETE'])
+@login_required
 def delete_transaction(transaction_id):
     transaction_ref = db.collection('holdings').document(transaction_id)
     transaction_doc = transaction_ref.get()
